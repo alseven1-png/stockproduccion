@@ -14,8 +14,23 @@
         import { getFirestore, collection, addDoc, query, onSnapshot, setLogLevel, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         // Configuración global de Firebase
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        // Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyBKV1mVfhFZJgeZRu6FHgz-2_KVrKDlHoc",
+  authDomain: "mercaderia-f1699.firebaseapp.com",
+  projectId: "mercaderia-f1699",
+  storageBucket: "mercaderia-f1699.firebasestorage.app",
+  messagingSenderId: "230493635490",
+  appId: "1:230493635490:web:f4b780864dbc64eebda8fb"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
 
         // Inicialización y configuración de variables globales para el script principal
         window.firebaseApp = initializeApp(firebaseConfig);
