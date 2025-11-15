@@ -370,10 +370,14 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 80`;
             const saveProductosBtn = document.getElementById('saveProductosBtn');
             const historialFilter = document.getElementById('historialFilter'); // Nuevo selector de filtro
             
-            // Rutas de Firestore
-            const MOVIMIENTOS_COLLECTION_PATH = `/artifacts/${firebaseConfig.appId}/public/data/panaderia_movimientos`;
-            const CONFIG_OPERARIOS_DOC_PATH = `artifacts/${appId}/public/data/configuracion/operarios`;
-            const CONFIG_PRODUCTOS_DOC_PATH = `artifacts/${appId}/public/data/configuracion/productos`;
+// Rutas de Firestore
+
+// 1. Corregido: Usar window.firebaseConfig
+const MOVIMIENTOS_COLLECTION_PATH = `/artifacts/${window.firebaseConfig.appId}/public/data/panaderia_movimientos`;
+// 2. Corregido: Usar window.appId (asumiendo que inicializaste window.appId correctamente)
+const CONFIG_OPERARIOS_DOC_PATH = `artifacts/${window.appId}/public/data/configuracion/operarios`;
+// 3. Corregido: Usar window.appId
+const CONFIG_PRODUCTOS_DOC_PATH = `artifacts/${window.appId}/public/data/configuracion/productos`;
 
             function navegar(vista) {
                 if (!isFirebaseReady) return; 
