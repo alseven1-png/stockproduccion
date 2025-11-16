@@ -11,30 +11,21 @@
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, query, onSnapshot, setLogLevel, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
-        // Your web app's Firebase configuration
-        // (Esta es la configuración de tu primer archivo, la cual es correcta)
-        const firebaseConfig = {
-          apiKey: "AIzaSyBKV1mVfhFZJgeZRu6FHgz-2_KVrKDlHoc",
-          authDomain: "mercaderia-f1699.firebaseapp.com",
-          projectId: "mercaderia-f1699",
-          storageBucket: "mercaderia-f1699.firebasestorage.app",
-          messagingSenderId: "230493635490",
-          appId: "1:230493635490:web:f4b780864dbc64eebda8fb"
-        };
+        // CORRECCIÓN 1: Usar la configuración DINÁMICA de Firebase Hosting
+        // Estas variables son "inyectadas" por Firebase cuando subes el sitio.
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
-        // CORRECCIÓN 1: Inicializar Firebase UNA SOLA VEZ
-        // Llamamos a initializeApp() una vez y guardamos la instancia.
+        // Inicializar Firebase UNA SOLA VEZ
         const app = initializeApp(firebaseConfig);
+
+        // Asignar todo a 'window' para que el script principal lo vea
+        window.firebaseApp = app;
+        window.auth = getAuth(app);
+        window.db = getFirestore(app);
         
-        // Asignamos esa MISMA instancia al objeto window para el script principal
-        window.firebaseApp = app; 
-        window.auth = getAuth(app); // Usamos la instancia 'app'
-        window.db = getFirestore(app); // Usamos la instancia 'app'
-        
-        // Habilitar logs para depuración de Firestore
         setLogLevel('Debug');
         
-        // Exportar funciones y variables necesarias al ámbito global
         window.getAuth = getAuth;
         window.signInAnonymously = signInAnonymously;
         window.signInWithCustomToken = signInWithCustomToken;
@@ -43,9 +34,7 @@
         window.addDoc = addDoc;
         window.query = query;
         window.onSnapshot = onSnapshot;
-        // Accede a la propiedad 'appId' del objeto 'firebaseConfig'
-        window.appId = firebaseConfig.appId;
-        // Nuevas exportaciones para configuración de base de datos
+        window.appId = appId; // <-- EXPORTAR EL APP_ID DINÁMICO
         window.doc = doc;
         window.getDoc = getDoc;
         window.setDoc = setDoc;
@@ -147,7 +136,7 @@
                             </tr>
                         </thead>
                         <tbody id="inventoryTableBody">
-                            <tr><td colspan="6" class="p-4 text-center text-gray-500">Cargando datos...</td></tr>
+              _             <tr><td colspan="6" class="p-4 text-center text-gray-500">Cargando datos...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -176,9 +165,9 @@
                     <div>
                         <label for="formato" class="block text-sm font-medium text-amber-800 mb-1">Formato de Registro</label>
                         <select id="formato" name="formato" required class="w-full p-3 border border-amber-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-amber-500">
-                      S</select>
+                        </select>
                     </div>
-                </div>
+            _ </div>
 
                 <div>
                     <label for="cantidad" class="block text-sm font-medium text-amber-800 mb-1">Cantidad</label>
@@ -189,7 +178,7 @@
                                         <div>
                         <label for="operario" class="block text-sm font-medium text-amber-800 mb-1">Operario</label>
                         <select id="operario" name="operario" required class="w-full p-3 border border-amber-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-amber-500">
-                                                    </select>
+text                                             </select>
                     </div>
                     <div>
                         <label for="fecha" class="block text-sm font-medium text-amber-800 mb-1">Fecha y Hora</label>
@@ -225,7 +214,7 @@
                             <tr>
                                 <th class="p-3 text-left font-semibold text-amber-800">Fecha/Hora</th>
                                 <th class="p-3 text-left font-semibold text-amber-800">Producto</th>
-                                <th class="p-3 text-left font-semibold text-amber-800">Tipo</th>
+default                     <th class="p-3 text-left font-semibold text-amber-800">Tipo</th>
                                 <th class="p-3 text-left font-semibold text-amber-800">Registro</th>
                                 <th class="p-3 text-left font-semibold text-amber-800">Cant. Base</th>
                                 <th class="p-3 text-left font-semibold text-amber-800">Operario</th>
@@ -241,4 +230,407 @@
             </div>
         </section>
         
-                <section id="view-configuracion" class
+                <section id="view-configuracion" class="view">
+            <h2 class="text-2xl font-semibold mb-4 text-amber-900">Configuración del Sistema</h2>
+          _ <p class="text-lg text-amber-800 mb-6 max-w-3xl">
+                Utilice esta sección para modificar las listas de productos y operarios autorizados. Los cambios se guardarán permanentemente en la base de datos y se aplicarán al instante.
+            </p>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                
+                                <div class="bg-white p-6 sm:p-8 rounded-lg shadow-md space-y-4">
+                    <h3 class="text-xl font-semibold text-amber-800 mb-2">Administrar Operarios</h3>
+                    
+                    <label for="operarioConfigArea" class="block text-sm font-medium text-amber-800 mb-1">
+default                   Escriba **un nombre de operario por cada línea**:
+                    </label>
+                    <textarea id="operarioConfigArea" rows="8" class="w-full p-3 border border-amber-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono"></textarea>
+                    
+                    <button id="saveOperariosBtn" class="w-full bg-amber-600 text-white font-bold py-3 px-6 rounded-md hover:bg-amber-700 transition duration-300 text-lg">
+                        Guardar Operarios
+                    </button>
+                </div>
+
+                                <div class="bg-white p-6 sm:p-8 rounded-lg shadow-md space-y-4">
+                    <h3 class="text-xl font-semibold text-amber-800 mb-2">Administrar Productos y Conversiones</h3>
+                    
+                    <label for="productosConfigArea" class="block text-sm font-medium text-amber-800 mb-1">
+                        Edite la lista de productos. **Un producto por línea**, usando el separador '|' (tubería):
+                    </label>
+                    <p class="text-xs text-amber-700 font-mono mb-2">
+                        NOMBRE | UNIDAD BASE (Kg/Unidad) | FORMATO ALTERNO (Docena/Lata/-) | FACTOR CONV. | STOCK INICIAL
+A                 </p>
+                    <textarea id="productosConfigArea" rows="8" class="w-full p-3 border border-amber-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono text-xs"></textarea>
+                    
+                    <button id="saveProductosBtn" class="w-full bg-amber-600 text-white font-bold py-3 px-6 rounded-md hover:bg-amber-700 transition duration-300 text-lg">
+                        Guardar Productos
+            _     </button>
+                    <p class="text-xs text-red-500">¡ADVERTENCIA! Un formato de línea incorrecto (ej. omitir un campo) puede deshabilitar el sistema.</p>
+                </div>
+
+            </div>
+        </section>
+
+    </main>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+
+            // VARIABLES DE ESTADO Y DATOS GLOBALES
+            let OPERARIOS_AUTORIZADOS = ["Seleccionar Operario"]; 
+            let dbProductos = []; // Esta variable será poblada por Firestore
+            
+            // Lista de productos por defecto (si la DB está vacía) en formato CSV-like
+            const defaultDbProductosCSV = `Media Luna Dulce | Unidad | Docena | 12 | 80
+Media Luna Salada | Unidad | Docena | 12 | 80
+Surtidas Dulces | Unidad | Bandeja | 6 | 60
+Surtidas Saladas | Unidad | Docena | 12 | 50
+Vigilantes | Unidad | Docena | 12 | 70
+Sacramento | Unidad | Docena | 12 | 40
+Palitos Dulces | Unidad | Media Docena | 6 | 30
+Palitos Salados | Unidad | Bolsa | 10 | 50
+Torta Negra | Unidad | - | 1 | 1
+Bolitas | Unidad | Caja | 15 | 90
+Rosquitas | Unidad | Bolsa | 20 | 100
+Pan de Castaña Rellenas | Kg | Unidad | 0.50 | 3
+Extra Cremonas | Kg | Unidad | 0.20 | 5
+Sacramentos Rellenos | Unidad | Docena | 12 | 40
+Bizcochos | Kg | Docena | 0.30 | 2
+Libritos | Kg | Docena | 0.30 | 4
+Libritos c/Semillas | Kg | Docena | 0.35 | 2
+Chipá | Kg | Unidad | 0.05 | 1
+Trenza | Unidad | - | 1 | 10
+Tarta Frutal | Porción | Tarta Entera | 8 | 16
+Panini | Kg | Unidad | 0.15 | 5
+Pan Francés | Kg | Unidad | 0.25 | 10
+Pan de Parrilla | Kg | Unidad | 0.40 | 3
+Torta Fritas | Unidad | Docena | 12 | 20
+Alfajor de Maicena | Unidad | Bandeja | 10 | 80`;
+
+            let dbMovimientos = [];
+            let stockChartInstance = null;
+            let currentUserId = null;
+            let isFirebaseReady = false;
+            
+            // Constantes de UI
+            const VISTAS = { panel: document.getElementById('view-panel'), registrar: document.getElementById('view-registrar'), historial: document.getElementById('view-historial'), configuracion: document.getElementById('view-configuracion') };
+            const NAVS = { panel: document.getElementById('nav-panel'), registrar: document.getElementById('nav-registrar'), historial: document.getElementById('nav-historial'), configuracion: document.getElementById('nav-configuracion') };
+            const productoSelect = document.getElementById('producto');
+            const formatoSelect = document.getElementById('formato');
+            const cargaForm = document.getElementById('cargaForm');
+            const inventoryTableBody = document.getElementById('inventoryTableBody');
+            const historialTableBody = document.getElementById('historialTableBody');
+            const searchInput = document.getElementById('searchInput');
+            const kpiTotalUnidades = document.getElementById('kpi-total-unidades');
+            const kpiStockBajo = document.getElementById('kpi-stock-bajo');
+            const kpiProduccionHoy = document.getElementById('kpi-produccion-hoy');
+text           const toastMessage = document.getElementById('toast-message');
+            const userIdDisplay = document.getElementById('user-id');
+            const operarioSelect = document.getElementById('operario');
+            const operarioConfigArea = document.getElementById('operarioConfigArea');
+            const saveOperariosBtn = document.getElementById('saveOperariosBtn');
+            const productosConfigArea = document.getElementById('productosConfigArea');
+  _         const saveProductosBtn = document.getElementById('saveProductosBtn');
+            const historialFilter = document.getElementById('historialFilter'); 
+            
+            // CORRECCIÓN 2: Unificar rutas de Firestore
+        // Usamos window.appId (exportado desde el script module) en todas las rutas.
+            const MOVIMIENTOS_COLLECTION_PATH = `/artifacts/${window.appId}/public/data/panaderia_movimientos`;
+            const CONFIG_OPERARIOS_DOC_PATH = `artifacts/${window.appId}/public/data/configuracion/operarios`;
+            const CONFIG_PRODUCTOS_DOC_PATH = `artifacts/${window.appId}/public/data/configuracion/productos`;
+
+        // CORRECCIÓN 3: Nueva función para obtener la fecha local (YYYY-MM-DD)
+        // Esto soluciona el bug de la zona horaria (UTC vs Local)
+        function getLocalISODate() {
+            const now = new Date();
+            const offset = now.getTimezoneOffset();
+            const localDate = new Date(now.getTime() - (offset * 60 * 1000));
+            return localDate.toISOString().split('T')[0];
+        }
+
+            function navegar(vista) {
+            // Este 'if' es el que "congela" las pestañas hasta que la DB se conecta.
+                if (!isFirebaseReady) {
+                console.log("Navegación bloqueada: Firebase no está listo.");
+                return;
+            }
+
+                Object.values(VISTAS).forEach(v => v.classList.remove('active-view'));
+                Object.values(NAVS).forEach(n => n.classList.remove('active-tab'));
+                
+                VISTAS[vista].classList.add('active-view');
+                NAVS[vista].classList.add('active-tab');
+
+                if (vista === 'configuracion') {
+                    renderConfiguracion();
+                } else if (vista === 'historial') {
+                    renderHistorial(historialFilter.value); 
+                }
+            }
+
+            function getProductoById(id) {
+                return dbProductos.find(p => p.id === id);
+            }
+text
+            function populateProductDropdown(selectIdToPreserve = null) {
+                productoSelect.innerHTML = '';
+                
+                if (dbProductos.length === 0) {
+                    const option = document.createElement('option');
+                    option.value = '';
+                    option.textContent = 'No hay productos configurados';
+                    option.disabled = true;
+                    productoSelect.appendChild(option);
+                    return;
+                }
+
+                const idToSelect = selectIdToPreserve || (dbProductos[0] ? dbProductos[0].id : null);
+
+                dbProductos.forEach(p => {
+                    const option = document.createElement('option');
+                    option.value = p.id;
+                    option.textContent = p.nombre;
+                    
+                    if (p.id === idToSelect) {
+                         option.selected = true;
+                    }
+                    productoSelect.appendChild(option);
+                });
+                
+                if (productoSelect.value) {
+                updateFormatDropdown(productoSelect.value);
+            }
+            }
+            
+            function updateFormatDropdown(selectedProductId) {
+                const producto = getProductoById(selectedProductId);
+                
+                formatoSelect.innerHTML = ''; 
+                
+                if (producto) {
+                    const optUnidad = document.createElement('option');
+                    optUnidad.value = producto.unidadBase;
+                    optUnidad.textContent = producto.unidadBase;
+                    formatoSelect.appendChild(optUnidad);
+
+                    if (producto.formatoAlterno !== '-' && producto.factorConv !== 1) {
+                        const optAlterno = document.createElement('option');
+                        optAlterno.value = producto.formatoAlterno;
+                        optAlterno.textContent = producto.formatoAlterno;
+                        formatoSelect.appendChild(optAlterno);
+                    }
+                }
+            }
+
+            function calcularStock() {
+                const stockCalculado = new Map();
+
+                dbProductos.forEach(p => {
+                    stockCalculado.set(p.id, {
+                        ...p,
+                        stockActual: p.stockInicial
+text               });
+                });
+
+                dbMovimientos.forEach(mov => {
+                    const prod = stockCalculado.get(mov.productoId);
+                    if (!prod) return; 
+                    if (mov.tipo === 'ENTRADA') {
+                        prod.stockActual += mov.cantidadBase;
+                    } else {
+                        prod.stockActual -= mov.cantidadBase;
+                    }
+                });
+                
+                return Array.from(stockCalculado.values());
+            }
+
+            function renderPanel() {
+                const stockActualizado = calcularStock();
+                inventoryTableBody.innerHTML = '';
+                let totalUnidadesGlobal = 0;
+                let totalStockBajo = 0;
+                
+                const searchTerm = searchInput.value.toLowerCase();
+
+            // CORRECCIÓN 3 (Aplicación 1): Usar la fecha local para el KPI
+                const todayISO = getLocalISODate(); // <-- CÓDIGO CORREGIDO
+
+                let totalProduccionHoy = 0;
+
+                stockActualizado.filter(p => p.nombre.toLowerCase().includes(searchTerm))
+                .forEach(p => {
+                    const stockBase = p.stockActual;
+                    const stockAlterno = p.factorConv > 0 ? stockBase / p.factorConv : 0;
+                    totalUnidadesGlobal += stockBase;
+                    
+                    if (stockBase < 20) {
+                        totalStockBajo++;
+                    }
+
+                    const tr = document.createElement('tr');
+test               tr.className = `border-b border-amber-100 ${stockBase < 20 ? 'bg-red-50' : ''}`;
+                    tr.innerHTML = `
+                        <td class="p-3">${p.id}</td>
+                        <td class="p-3 font-medium">${p.nombre}</td>
+                        <td class="p-3">${p.unidadBase}</td>
+                        <td class="p-3 font-bold ${stockBase < 20 ? 'text-red-600' : ''}">${stockBase.toLocaleString('es-ES', { maximumFractionDigits: 2 })}</td>
+                        <td class="p-3">${stockAlterno.toLocaleString('es-ES', { maximumFractionDigits: 2 })}</td>
+                        <td class="p-3 text-sm text-gray-600">${p.formatoAlterno !== '-' ? p.formatoAlterno : p.unidadBase}</td>
+                    `;
+                    inventoryTableBody.appendChild(tr);
+                });
+                
+                // Sumar entradas de hoy
+A               dbMovimientos.forEach(mov => {
+                    const movDate = mov.fecha.split('T')[0]; 
+                    if (mov.tipo === 'ENTRADA' && movDate === todayISO) {
+                        totalProduccionHoy += mov.cantidadBase;
+                    }
+                });
+
+                kpiTotalUnidades.textContent = Math.round(totalUnidadesGlobal).toLocaleString('es-ES');
+                kpiStockBajo.textContent = totalStockBajo;
+                kpiProduccionHoy.textContent = totalProduccionHoy.toLocaleString('es-ES', { maximumFractionDigits: 2 });
+
+                renderChart(stockActualizado);
+            }
+            
+            function renderChart(data) {
+                const ctx = document.getElementById('stockChart').getContext('2d');
+                
+                const labels = data.map(p => `${p.nombre} (${p.unidadBase})`);
+                const stockData = data.map(p => p.stockActual);
+                
+                const backgroundColors = data.map(p => p.stockActual < 20 ? 'rgba(239, 68, 68, 0.6)' : 'rgba(217, 119, 6, 0.6)');
+                const borderColors = data.map(p => p.stockActual < 20 ? 'rgba(239, 68, 68, 1)' : 'rgba(217, 119, 6, 1)');
+
+                if (stockChartInstance) {
+                    stockChartInstance.destroy();
+_             }
+
+                stockChartInstance = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+body                   labels: labels,
+                        datasets: [{
+                            label: 'Stock Actual (Unidades Base)',
+                            data: stockData,
+                            backgroundColor: backgroundColors,
+                  _       borderColor: borderColors,
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        indexAxis: 'y',
+                        scales: {
+                            x: {
+                                beginAtZero: true
+                          _ },
+                            y: {
+                                ticks: {
+                                    autoSkip: false,
+                                    font: {
+                                        size: 10
+                                    }
+                                }
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                display: false
+                            }
+                        }
+                    }
+                });
+            }
+
+            function renderHistorial(filterMode = 'TODAY') {
+                historialTableBody.innerHTML = '';
+                
+                let movimientosFiltrados = [...dbMovimientos].sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+                
+                if (filterMode === 'TODAY') {
+                // CORRECCIÓN 3 (Aplicación 2): Usar la fecha local para el filtro de historial
+          _         const today = getLocalISODate(); // <-- CÓDIGO CORREGIDO
+                    movimientosFiltrados = movimientosFiltrados.filter(mov => mov.fecha.split('T')[0] === today);
+                }
+
+                if (movimientosFiltrados.length === 0) {
+                    const message = filterMode === 'TODAY' ? 'No hay movimientos registrados para el día de hoy.' : 'No hay movimientos registrados.';
+                    historialTableBody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500">${message}</td></tr>`;
+                    return;
+                }
+
+                movimientosFiltrados.forEach(mov => {
+                    const producto = getProductoById(mov.productoId);
+                    if (!producto) return; 
+
+                    const tr = document.createElement('tr');
+                    tr.className = 'border-b border-amber-100';
+                    tr.innerHTML = `
+                        <td class="p-3 text-sm">${new Date(mov.fecha).toLocaleString('es-ES')}</td>
+                        <td class="p-3 font-medium">${producto.nombre}</td>
+                        <td class="p-3">
+                            <span class="px-2 py-1 text-xs font-semibold rounded-full ${mov.tipo === 'ENTRADA' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
+                                ${mov.tipo}
+                            </span>
+                        </td>
+                        <td class="p-3 text-sm">${mov.cantidad.toLocaleString('es-ES')} ${mov.formato}</td>
+                        <td class="p-3 font-bold">${mov.tipo === 'ENTRADA' ? '+' : '-'}${mov.cantidadBase.toLocaleString('es-ES', { maximumFractionDigits: 2 })} ${producto.unidadBase}</td>
+                        <td class="p-3 text-sm text-gray-600">${mov.operario || '-'}</td>
+                    `;
+                    historialTableBody.appendChild(tr);
+                });
+            }
+
+            async function registrarMovimiento(e) {
+                e.preventDefault();
+                
+                const formData = new FormData(cargaForm);
+                const productoId = formData.get('producto');
+                const tipo = formData.get('tipo');
+                const formato = formData.get('formato');
+                const cantidad = parseFloat(formData.get('cantidad'));
+                const operario = formData.get('operario');
+                const fecha = formData.get('fecha');
+
+                if (!currentUserId) {
+                    showToast('Error: Usuario no autenticado.');
+                    return;
+                }
+
+                if (operario === OPERARIOS_AUTORIZADOS[0]) { 
+                    showToast('Error: Por favor, seleccione un operario válido.');
+                    return;
+                }
+                
+                if (cantidad <= 0 || isNaN(cantidad)) {
+text                  showToast('Error: La cantidad debe ser un número positivo.');
+                     return;
+                }
+
+                const producto = getProductoById(productoId);
+                if (!producto) {
+                    showToast('Error: Producto no encontrado en la configuración.');
+                    return;
+                }
+
+          _   let cantidadBase = cantidad;
+
+                // Si el formato registrado es el FORMATO ALTERNO, usamos el FACTOR DE CONVERSION.
+text               if (formato === producto.formatoAlterno && producto.formatoAlterno !== '-' && producto.factorConv !== 1) {
+                    cantidadBase = cantidad * producto.factorConv;
+                }
+                
+                // Si el formato registrado es la UNIDAD BASE (Kg, Unidad, Porción), la cantidad base es la cantidad.
+                
+                const nuevoMovimiento = {
+                    fecha: fecha, // Almacenar como string ISO para Firestore
+                    productoId,
+                    tipo,
+node                 formato,
+                    cantidad,
+                    cantidadBase,
