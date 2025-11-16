@@ -1,977 +1,244 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestor de Stock de Producción - Panadería</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- Firebase Imports -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        // Importaciones de Firestore ampliadas para configuración
-        import { getFirestore, collection, addDoc, query, onSnapshot, setLogLevel, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        
-        // Configuración global de Firebase
-        // Import the functions you need from the SDKs you need
-//import { initializeApp } from "firebase/app";
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestor de Stock de Producción - Panadería</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, query, onSnapshot, setLogLevel, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // Your web app's Firebase configuration
+        // (Esta es la configuración de tu primer archivo, la cual es correcta)
+        const firebaseConfig = {
+          apiKey: "AIzaSyBKV1mVfhFZJgeZRu6FHgz-2_KVrKDlHoc",
+          authDomain: "mercaderia-f1699.firebaseapp.com",
+          projectId: "mercaderia-f1699",
+          storageBucket: "mercaderia-f1699.firebasestorage.app",
+          messagingSenderId: "230493635490",
+          appId: "1:230493635490:web:f4b780864dbc64eebda8fb"
+        };
 
-// Your web app's Firebase configuration
-const firebaseConfig = {
-  apiKey: "AIzaSyBKV1mVfhFZJgeZRu6FHgz-2_KVrKDlHoc",
-  authDomain: "mercaderia-f1699.firebaseapp.com",
-  projectId: "mercaderia-f1699",
-  storageBucket: "mercaderia-f1699.firebasestorage.app",
-  messagingSenderId: "230493635490",
-  appId: "1:230493635490:web:f4b780864dbc64eebda8fb"
-};
-
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-
-        // Inicialización y configuración de variables globales para el script principal
-        window.firebaseApp = initializeApp(firebaseConfig);
-        window.auth = getAuth(window.firebaseApp);
-        window.db = getFirestore(window.firebaseApp);
-        
-        // Habilitar logs para depuración de Firestore
-        setLogLevel('Debug');
-        
-        // Exportar funciones y variables necesarias al ámbito global
-        window.getAuth = getAuth;
-        window.signInAnonymously = signInAnonymously;
-        window.signInWithCustomToken = signInWithCustomToken;
-        window.onAuthStateChanged = onAuthStateChanged;
-        window.collection = collection;
-        window.addDoc = addDoc;
-        window.query = query;
-        window.onSnapshot = onSnapshot;
-        // Accede a la propiedad 'appId' del objeto 'firebaseConfig'
-        window.appId = firebaseConfig.appId;
-        //window.appId = appId;
-        // Nuevas exportaciones para configuración de base de datos
-        window.doc = doc;
-        window.getDoc = getDoc;
-        window.setDoc = setDoc;
-    </script>
-    <!-- 
-    Chosen Palette: Warm Neutrals (Amber/Brown)
-    Application Structure Plan: Se diseñó una SPA de cuatro pestañas: "Panel de Stock de Producción", "Registrar Movimiento", "Historial" y "Configuración". La pestaña Configuración ahora gestiona productos y operarios con un formato de texto simple (CSV delimitado) para mejorar la usabilidad. El Historial por defecto ahora muestra solo "Movimientos de Hoy" para facilitar el traspaso de lote diario. La estructura de tres columnas en el Panel prioriza los KPIs clave (Stock Total, Producción del Día, Stock Bajo). La persistencia se logra con Firestore para todos los datos.
-    Visualization & Content Choices: 
-    1. Report Info: Stock de 25 productos (Ahora con pesables en Kg). Goal: Comparar visualmente el stock de 25 productos. Viz: Gráfico de Barras (Chart.js). Interaction: Tooltip al pasar el ratón. Justification: Un gráfico es superior a una tabla para una visión rápida de niveles altos/bajos.
-    2. Report Info: Carga de movimientos. Goal: Entrada de datos fácil y sin errores en móviles. Viz: Formulario HTML. Interaction: Listas desplegables <select> para Producto, Tipo, Formato y ahora Operario. Justification: Evita errores de tipeo y restringe la carga a usuarios autorizados/identificados.
-    3. Report Info: Gestión de operarios/productos. Goal: Modificar listas sin editar código. Viz: Textarea con formato CSV/línea por línea. Interaction: Parseo y guardado en Firestore. Justification: Solución simple y persistente para la administración.
-    CONFIRMATION: NO SVG graphics used. NO Mermaid JS used.
-    -->
-    <style>
-        .nav-tab {
-            padding: 1rem 1.5rem;
-            cursor: pointer;
-            font-weight: 500;
-            border-bottom: 4px solid transparent;
-            transition: all 0.3s ease;
-        }
-        .nav-tab:hover {
-            background-color: #a16207; 
-        }
-        .nav-tab.active-tab {
-            border-color: #f59e0b; 
-            color: #ffffff;
-            font-weight: 600;
-        }
-        .view {
-            display: none;
-        }
-        .view.active-view {
-            display: block;
-        }
-    </style>
+        // CORRECCIÓN 1: Inicializar Firebase UNA SOLA VEZ
+        // Llamamos a initializeApp() una vez y guardamos la instancia.
+        const app = initializeApp(firebaseConfig);
+        
+        // Asignamos esa MISMA instancia al objeto window para el script principal
+        window.firebaseApp = app; 
+        window.auth = getAuth(app); // Usamos la instancia 'app'
+        window.db = getFirestore(app); // Usamos la instancia 'app'
+        
+        // Habilitar logs para depuración de Firestore
+        setLogLevel('Debug');
+        
+        // Exportar funciones y variables necesarias al ámbito global
+        window.getAuth = getAuth;
+        window.signInAnonymously = signInAnonymously;
+        window.signInWithCustomToken = signInWithCustomToken;
+        window.onAuthStateChanged = onAuthStateChanged;
+        window.collection = collection;
+        window.addDoc = addDoc;
+        window.query = query;
+        window.onSnapshot = onSnapshot;
+        // Accede a la propiedad 'appId' del objeto 'firebaseConfig'
+        window.appId = firebaseConfig.appId;
+        // Nuevas exportaciones para configuración de base de datos
+        window.doc = doc;
+        window.getDoc = getDoc;
+        window.setDoc = setDoc;
+    </script>
+    <style>
+        .nav-tab {
+            padding: 1rem 1.5rem;
+            cursor: pointer;
+            font-weight: 500;
+            border-bottom: 4px solid transparent;
+            transition: all 0.3s ease;
+        }
+        .nav-tab:hover {
+            background-color: #a16207; 
+        }
+        .nav-tab.active-tab {
+            border-color: #f59e0b; 
+            color: #ffffff;
+            font-weight: 600;
+        }
+        .view {
+            display: none;
+        }
+        .view.active-view {
+            display: block;
+        }
+    </style>
 </head>
 <body class="bg-amber-50 font-sans text-amber-900">
 
-    <header class="bg-white shadow-md">
-        <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center flex-wrap">
-            <h1 class="text-2xl sm:text-3xl font-bold text-amber-900">Gestor de Stock de Producción</h1>
-            <div class="mt-2 sm:mt-0 text-right text-xs text-amber-700">
-                <p>Usuario Actual (ID):</p>
-                <p id="user-id" class="font-mono text-amber-900 font-semibold truncate">Cargando...</p>
-            </div>
-        </div>
-    </header>
-
-    <nav class="bg-amber-800 text-amber-100 shadow-lg">
-        <div class="container mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row">
-            <button id="nav-panel" class="nav-tab active-tab">Panel de Stock</button>
-            <button id="nav-registrar" class="nav-tab">Registrar Movimiento</button>
-            <button id="nav-historial" class="nav-tab">Historial</button>
-            <button id="nav-configuracion" class="nav-tab">Configuración</button>
-        </div>
-    </nav>
-
-    <main class="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
-
-        <div id="toast-message" class="hidden fixed top-20 right-5 bg-green-500 text-white py-2 px-4 rounded-lg shadow-lg z-50">
-            Movimiento registrado con éxito.
-        </div>
-
-        <!-- VISTA 1: PANEL DE CONTROL -->
-        <section id="view-panel" class="view active-view space-y-6">
-            <p class="text-lg text-amber-800">
-                Bienvenido al Panel de Stock de Producción. Aquí puede monitorear el estado actual de su inventario, ver la producción total del día para el traspaso de lote y consultar los detalles de cada producto. **Los datos se actualizan en tiempo real.**
-            </p>
-
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div class="bg-white p-6 rounded-lg shadow-md">
-                    <h3 class="text-lg font-semibold text-amber-800">Stock Global (Base)</h3>
-                    <p id="kpi-total-unidades" class="text-4xl font-bold text-amber-900">0</p>
-                    <span class="text-sm text-gray-500">(Stock total en unidades base: Unidades, Kg, Porciones)</span>
-                </div>
-                <!-- KPI: Producción del día para el traspaso de lote -->
-                <div class="bg-white p-6 rounded-lg shadow-md">
-                    <h3 class="text-lg font-semibold text-amber-800">Producción Total (Hoy)</h3>
-                    <p id="kpi-produccion-hoy" class="text-4xl font-bold text-green-600">0</p>
-                    <span class="text-sm text-gray-500">(Suma de todas las Entradas de hoy, en sus unidades base)</span>
-                </div>
-                <!-- KPI Stock Bajo existente -->
-                <div class="bg-white p-6 rounded-lg shadow-md">
-                    <h3 class="text-lg font-semibold text-amber-800">Productos con Stock Bajo</h3>
-                    <p id="kpi-stock-bajo" class="text-4xl font-bold text-red-600">0</p>
-                    <span class="text-sm text-gray-500">(Productos bajo el límite de 20 unidades base)</span>
-                </div>
-            </div>
-            
-            <div class="bg-white p-4 sm:p-6 rounded-lg shadow-md">
-                <h2 class="text-2xl font-semibold mb-4 text-amber-900">Niveles de Stock (Unidades Base)</h2>
-                <div class="chart-container" style="position: relative; height: 50vh; max-height: 450px; width: 100%; max-width: 1000px; margin-left: auto; margin-right: auto;">
-                    <canvas id="stockChart"></canvas>
-                </div>
-            </div>
-
-            <div class="bg-white p-4 sm:p-6 rounded-lg shadow-md">
-                <h2 class="text-2xl font-semibold mb-4 text-amber-900">Inventario Detallado</h2>
-                <input id="searchInput" type="text" placeholder="Buscar producto por nombre..." class="w-full p-3 border border-amber-300 rounded-md mb-4 focus:outline-none focus:ring-2 focus:ring-amber-500">
-                <div class="overflow-x-auto">
-                    <table class="w-full min-w-max">
-                        <thead class="bg-amber-100">
-                            <tr>
-                                <th class="p-3 text-left font-semibold text-amber-800">CÓDIGO</th>
-                                <th class="p-3 text-left font-semibold text-amber-800">Producto</th>
-                                <th class="p-3 text-left font-semibold text-amber-800">Unidad Base</th>
-                                <th class="p-3 text-left font-semibold text-amber-800">Stock (Base)</th>
-                                <th class="p-3 text-left font-semibold text-amber-800">Stock (Alterno)</th>
-                                <th class="p-3 text-left font-semibold text-amber-800">Formato Alterno</th>
-                            </tr>
-                        </thead>
-                        <tbody id="inventoryTableBody">
-                            <tr><td colspan="6" class="p-4 text-center text-gray-500">Cargando datos...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </section>
-
-        <!-- VISTA 2: REGISTRAR MOVIMIENTO -->
-        <section id="view-registrar" class="view">
-            <p class="text-lg text-amber-800 mb-6 max-w-2xl mx-auto">
-                Utilice este formulario para registrar nuevas producciones (Entradas) o ventas/consumos (Salidas). Los datos se actualizarán en el panel de control automáticamente.
-            </p>
-            <form id="cargaForm" class="bg-white p-6 sm:p-8 rounded-lg shadow-md max-w-2xl mx-auto space-y-6">
-                <div>
-                    <label for="producto" class="block text-sm font-medium text-amber-800 mb-1">Producto</label>
-                    <select id="producto" name="producto" required class="w-full p-3 border border-amber-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-amber-500">
-                    </select>
-                </div>
-
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                    <div>
-                        <label for="tipo" class="block text-sm font-medium text-amber-800 mb-1">Tipo de Movimiento</label>
-                        <select id="tipo" name="tipo" required class="w-full p-3 border border-amber-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-amber-500">
-                            <option value="ENTRADA">ENTRADA (Producción)</option>
-                            <option value="SALIDA">SALIDA (Venta/Consumo)</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label for="formato" class="block text-sm font-medium text-amber-800 mb-1">Formato de Registro</label>
-                        <select id="formato" name="formato" required class="w-full p-3 border border-amber-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-amber-500">
-                        </select>
-                    </div>
-                </div>
-
-                <div>
-                    <label for="cantidad" class="block text-sm font-medium text-amber-800 mb-1">Cantidad</label>
-                    <input type="number" id="cantidad" name="cantidad" min="0.01" step="0.01" required class="w-full p-3 border border-amber-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500" placeholder="Ej: 2 (para latas) o 15 (para unidades/Kg)">
-                </div>
-
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                    <!-- CAMBIO: Campo Operario a SELECT -->
-                    <div>
-                        <label for="operario" class="block text-sm font-medium text-amber-800 mb-1">Operario</label>
-                        <select id="operario" name="operario" required class="w-full p-3 border border-amber-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-amber-500">
-                            <!-- Opciones cargadas por JS -->
-                        </select>
-                    </div>
-                    <div>
-                        <label for="fecha" class="block text-sm font-medium text-amber-800 mb-1">Fecha y Hora</label>
-                        <input type="datetime-local" id="fecha" name="fecha" required class="w-full p-3 border border-amber-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500">
-                    </div>
-                </div>
-
-                <div>
-                    <button type="submit" class="w-full bg-amber-600 text-white font-bold py-3 px-6 rounded-md hover:bg-amber-700 transition duration-300 text-lg">
-                        Registrar Movimiento
-                    </button>
-                </div>
-            </form>
-        </section>
-
-        <!-- VISTA 3: HISTORIAL -->
-        <section id="view-historial" class="view space-y-6">
-            <p class="text-lg text-amber-800">
-                Registro cronológico de movimientos. **Por defecto se muestran solo los movimientos del día actual** para facilitar el traspaso de lote.
-            </p>
-            
-            <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center bg-white p-4 rounded-lg shadow-md">
-                <h2 class="text-xl font-semibold text-amber-900 mb-2 sm:mb-0">Filtro de Historial</h2>
-                <select id="historialFilter" class="p-2 border border-amber-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-amber-500">
-                    <option value="TODAY">Movimientos de Hoy</option>
-                    <option value="ALL">Todos los Movimientos</option>
-                </select>
-            </div>
-            
-            <div class="bg-white p-4 sm:p-6 rounded-lg shadow-md">
-                <div class="overflow-x-auto">
-                    <table class="w-full min-w-max">
-                        <thead class="bg-amber-100">
-                            <tr>
-                                <th class="p-3 text-left font-semibold text-amber-800">Fecha/Hora</th>
-                                <th class="p-3 text-left font-semibold text-amber-800">Producto</th>
-                                <th class="p-3 text-left font-semibold text-amber-800">Tipo</th>
-                                <th class="p-3 text-left font-semibold text-amber-800">Registro</th>
-                                <th class="p-3 text-left font-semibold text-amber-800">Cant. Base</th>
-                                <th class="p-3 text-left font-semibold text-amber-800">Operario</th>
-                            </tr>
-                        </thead>
-                        <tbody id="historialTableBody">
-                            <tr>
-                                <td colspan="6" class="p-4 text-center text-gray-500">Cargando datos...</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </section>
-        
-        <!-- VISTA 4: CONFIGURACIÓN -->
-        <section id="view-configuracion" class="view">
-            <h2 class="text-2xl font-semibold mb-4 text-amber-900">Configuración del Sistema</h2>
-            <p class="text-lg text-amber-800 mb-6 max-w-3xl">
-                Utilice esta sección para modificar las listas de productos y operarios autorizados. Los cambios se guardarán permanentemente en la base de datos y se aplicarán al instante.
-            </p>
-
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                
-                <!-- Gestión de Operarios -->
-                <div class="bg-white p-6 sm:p-8 rounded-lg shadow-md space-y-4">
-                    <h3 class="text-xl font-semibold text-amber-800 mb-2">Administrar Operarios</h3>
-                    
-                    <label for="operarioConfigArea" class="block text-sm font-medium text-amber-800 mb-1">
-                        Escriba **un nombre de operario por cada línea**:
-                    </label>
-                    <textarea id="operarioConfigArea" rows="8" class="w-full p-3 border border-amber-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono"></textarea>
-                    
-                    <button id="saveOperariosBtn" class="w-full bg-amber-600 text-white font-bold py-3 px-6 rounded-md hover:bg-amber-700 transition duration-300 text-lg">
-                        Guardar Operarios
-                    </button>
-                </div>
-
-                <!-- Gestión de Productos -->
-                <div class="bg-white p-6 sm:p-8 rounded-lg shadow-md space-y-4">
-                    <h3 class="text-xl font-semibold text-amber-800 mb-2">Administrar Productos y Conversiones</h3>
-                    
-                    <label for="productosConfigArea" class="block text-sm font-medium text-amber-800 mb-1">
-                        Edite la lista de productos. **Un producto por línea**, usando el separador '|' (tubería):
-                    </label>
-                    <p class="text-xs text-amber-700 font-mono mb-2">
-                        NOMBRE | UNIDAD BASE (Kg/Unidad) | FORMATO ALTERNO (Docena/Lata/-) | FACTOR CONV. | STOCK INICIAL
-                    </p>
-                    <textarea id="productosConfigArea" rows="8" class="w-full p-3 border border-amber-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono text-xs"></textarea>
-                    
-                    <button id="saveProductosBtn" class="w-full bg-amber-600 text-white font-bold py-3 px-6 rounded-md hover:bg-amber-700 transition duration-300 text-lg">
-                        Guardar Productos
-                    </button>
-                    <p class="text-xs text-red-500">¡ADVERTENCIA! Un formato de línea incorrecto (ej. omitir un campo) puede deshabilitar el sistema.</p>
-                </div>
-
-            </div>
-        </section>
-
-    </main>
-
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-
-            // VARIABLES DE ESTADO Y DATOS GLOBALES
-            let OPERARIOS_AUTORIZADOS = ["Seleccionar Operario"]; 
-            let dbProductos = []; // Esta variable será poblada por Firestore
-            
-            // Lista de productos por defecto (si la DB está vacía) en formato CSV-like
-            const defaultDbProductosCSV = `Media Luna Dulce | Unidad | Docena | 12 | 80
-Media Luna Salada | Unidad | Docena | 12 | 80
-Surtidas Dulces | Unidad | Bandeja | 6 | 60
-Surtidas Saladas | Unidad | Docena | 12 | 50
-Vigilantes | Unidad | Docena | 12 | 70
-Sacramento | Unidad | Docena | 12 | 40
-Palitos Dulces | Unidad | Media Docena | 6 | 30
-Palitos Salados | Unidad | Bolsa | 10 | 50
-Torta Negra | Unidad | - | 1 | 1
-Bolitas | Unidad | Caja | 15 | 90
-Rosquitas | Unidad | Bolsa | 20 | 100
-Pan de Castaña Rellenas | Kg | Unidad | 0.50 | 3
-Extra Cremonas | Kg | Unidad | 0.20 | 5
-Sacramentos Rellenos | Unidad | Docena | 12 | 40
-Bizcochos | Kg | Docena | 0.30 | 2
-Libritos | Kg | Docena | 0.30 | 4
-Libritos c/Semillas | Kg | Docena | 0.35 | 2
-Chipá | Kg | Unidad | 0.05 | 1
-Trenza | Unidad | - | 1 | 10
-Tarta Frutal | Porción | Tarta Entera | 8 | 16
-Panini | Kg | Unidad | 0.15 | 5
-Pan Francés | Kg | Unidad | 0.25 | 10
-Pan de Parrilla | Kg | Unidad | 0.40 | 3
-Torta Fritas | Unidad | Docena | 12 | 20
-Alfajor de Maicena | Unidad | Bandeja | 10 | 80`;
-
-            let dbMovimientos = [];
-            let stockChartInstance = null;
-            let currentUserId = null;
-            let isFirebaseReady = false;
-            
-            // Constantes de UI
-            const VISTAS = { panel: document.getElementById('view-panel'), registrar: document.getElementById('view-registrar'), historial: document.getElementById('view-historial'), configuracion: document.getElementById('view-configuracion') };
-            const NAVS = { panel: document.getElementById('nav-panel'), registrar: document.getElementById('nav-registrar'), historial: document.getElementById('nav-historial'), configuracion: document.getElementById('nav-configuracion') };
-            const productoSelect = document.getElementById('producto');
-            const formatoSelect = document.getElementById('formato');
-            const cargaForm = document.getElementById('cargaForm');
-            const inventoryTableBody = document.getElementById('inventoryTableBody');
-            const historialTableBody = document.getElementById('historialTableBody');
-            const searchInput = document.getElementById('searchInput');
-            const kpiTotalUnidades = document.getElementById('kpi-total-unidades');
-            const kpiStockBajo = document.getElementById('kpi-stock-bajo');
-            const kpiProduccionHoy = document.getElementById('kpi-produccion-hoy');
-            const toastMessage = document.getElementById('toast-message');
-            const userIdDisplay = document.getElementById('user-id');
-            const operarioSelect = document.getElementById('operario');
-            const operarioConfigArea = document.getElementById('operarioConfigArea');
-            const saveOperariosBtn = document.getElementById('saveOperariosBtn');
-            const productosConfigArea = document.getElementById('productosConfigArea');
-            const saveProductosBtn = document.getElementById('saveProductosBtn');
-            const historialFilter = document.getElementById('historialFilter'); // Nuevo selector de filtro
-            
-// Rutas de Firestore
-
-// 1. Corregido: Usar window.firebaseConfig
-const MOVIMIENTOS_COLLECTION_PATH = `/artifacts/${window.firebaseConfig.appId}/public/data/panaderia_movimientos`;
-// 2. Corregido: Usar window.appId (asumiendo que inicializaste window.appId correctamente)
-const CONFIG_OPERARIOS_DOC_PATH = `artifacts/${window.appId}/public/data/configuracion/operarios`;
-// 3. Corregido: Usar window.appId
-const CONFIG_PRODUCTOS_DOC_PATH = `artifacts/${window.appId}/public/data/configuracion/productos`;
-
-            function navegar(vista) {
-                if (!isFirebaseReady) return; 
-
-                Object.values(VISTAS).forEach(v => v.classList.remove('active-view'));
-                Object.values(NAVS).forEach(n => n.classList.remove('active-tab'));
-                
-                VISTAS[vista].classList.add('active-view');
-                NAVS[vista].classList.add('active-tab');
-
-                if (vista === 'configuracion') {
-                    renderConfiguracion();
-                } else if (vista === 'historial') {
-                    renderHistorial(historialFilter.value); // Renderiza el historial con el filtro actual
-                }
-            }
-
-            function getProductoById(id) {
-                return dbProductos.find(p => p.id === id);
-            }
-
-            // CORRECCIÓN DE BUG: Función para poblar el dropdown de productos (solo al inicio o al actualizar configuración)
-            function populateProductDropdown(selectIdToPreserve = null) {
-                productoSelect.innerHTML = '';
-                
-                if (dbProductos.length === 0) {
-                     // Si no hay productos, añade una opción de placeholder
-                    const option = document.createElement('option');
-                    option.value = '';
-                    option.textContent = 'No hay productos configurados';
-                    option.disabled = true;
-                    productoSelect.appendChild(option);
-                    return;
-                }
-
-                // Si no hay un ID de producto para preservar, usa el primero de la lista
-                const idToSelect = selectIdToPreserve || dbProductos[0].id;
-
-                dbProductos.forEach(p => {
-                    const option = document.createElement('option');
-                    option.value = p.id;
-                    option.textContent = p.nombre;
-                    
-                    if (p.id === idToSelect) {
-                         option.selected = true;
-                    }
-                    productoSelect.appendChild(option);
-                });
-                
-                // Una vez poblado, actualiza el dropdown de formatos con la selección actual
-                updateFormatDropdown(productoSelect.value);
-            }
-            
-            // CORRECCIÓN DE BUG: Función para actualizar el dropdown de formato (se llama al cambiar el producto)
-            function updateFormatDropdown(selectedProductId) {
-                const producto = getProductoById(selectedProductId);
-                
-                formatoSelect.innerHTML = ''; 
-                
-                if (producto) {
-                    // Opción 1: Unidad Base (siempre disponible)
-                    const optUnidad = document.createElement('option');
-                    optUnidad.value = producto.unidadBase;
-                    optUnidad.textContent = producto.unidadBase;
-                    formatoSelect.appendChild(optUnidad);
-
-                    // Opción 2: Formato Alterno (si existe)
-                    if (producto.formatoAlterno !== '-' && producto.factorConv !== 1) {
-                        const optAlterno = document.createElement('option');
-                        optAlterno.value = producto.formatoAlterno;
-                        optAlterno.textContent = producto.formatoAlterno;
-                        formatoSelect.appendChild(optAlterno);
-                    }
-                }
-            }
-
-            function calcularStock() {
-                const stockCalculado = new Map();
-
-                dbProductos.forEach(p => {
-                    stockCalculado.set(p.id, {
-                        ...p,
-                        stockActual: p.stockInicial
-                    });
-                });
-
-                dbMovimientos.forEach(mov => {
-                    const prod = stockCalculado.get(mov.productoId);
-                    if (!prod) return; 
-                    if (mov.tipo === 'ENTRADA') {
-                        prod.stockActual += mov.cantidadBase;
-                    } else {
-                        prod.stockActual -= mov.cantidadBase;
-                    }
-                });
-                
-                return Array.from(stockCalculado.values());
-            }
-
-            function renderPanel() {
-                const stockActualizado = calcularStock();
-                inventoryTableBody.innerHTML = '';
-                let totalUnidadesGlobal = 0;
-                let totalStockBajo = 0;
-                
-                const searchTerm = searchInput.value.toLowerCase();
-
-                // Calcular Producción Total de Hoy
-                const today = new Date();
-                today.setHours(0, 0, 0, 0); // Inicio del día
-                const todayISO = today.toISOString().split('T')[0];
-
-                let totalProduccionHoy = 0;
-
-                stockActualizado.filter(p => p.nombre.toLowerCase().includes(searchTerm))
-                .forEach(p => {
-                    const stockBase = p.stockActual;
-                    const stockAlterno = p.factorConv > 0 ? stockBase / p.factorConv : 0;
-                    totalUnidadesGlobal += stockBase;
-                    
-                    if (stockBase < 20) {
-                        totalStockBajo++;
-                    }
-
-                    const tr = document.createElement('tr');
-                    tr.className = `border-b border-amber-100 ${stockBase < 20 ? 'bg-red-50' : ''}`;
-                    tr.innerHTML = `
-                        <td class="p-3">${p.id}</td>
-                        <td class="p-3 font-medium">${p.nombre}</td>
-                        <td class="p-3">${p.unidadBase}</td>
-                        <td class="p-3 font-bold ${stockBase < 20 ? 'text-red-600' : ''}">${stockBase.toLocaleString('es-ES', { maximumFractionDigits: 2 })}</td>
-                        <td class="p-3">${stockAlterno.toLocaleString('es-ES', { maximumFractionDigits: 2 })}</td>
-                        <td class="p-3 text-sm text-gray-600">${p.formatoAlterno !== '-' ? p.formatoAlterno : p.unidadBase}</td>
-                    `;
-                    inventoryTableBody.appendChild(tr);
-                });
-                
-                // Sumar entradas de hoy
-                dbMovimientos.forEach(mov => {
-                    const movDate = mov.fecha.split('T')[0]; 
-                    if (mov.tipo === 'ENTRADA' && movDate === todayISO) {
-                        totalProduccionHoy += mov.cantidadBase;
-                    }
-                });
-
-
-                kpiTotalUnidades.textContent = Math.round(totalUnidadesGlobal).toLocaleString('es-ES');
-                kpiStockBajo.textContent = totalStockBajo;
-                kpiProduccionHoy.textContent = totalProduccionHoy.toLocaleString('es-ES', { maximumFractionDigits: 2 });
-
-                renderChart(stockActualizado);
-            }
-            
-            function renderChart(data) {
-                const ctx = document.getElementById('stockChart').getContext('2d');
-                
-                const labels = data.map(p => `${p.nombre} (${p.unidadBase})`);
-                const stockData = data.map(p => p.stockActual);
-                
-                const backgroundColors = data.map(p => p.stockActual < 20 ? 'rgba(239, 68, 68, 0.6)' : 'rgba(217, 119, 6, 0.6)');
-                const borderColors = data.map(p => p.stockActual < 20 ? 'rgba(239, 68, 68, 1)' : 'rgba(217, 119, 6, 1)');
-
-                if (stockChartInstance) {
-                    stockChartInstance.destroy();
-                }
-
-                stockChartInstance = new Chart(ctx, {
-                    type: 'bar',
-                    data: {
-                        labels: labels,
-                        datasets: [{
-                            label: 'Stock Actual (Unidades Base)',
-                            data: stockData,
-                            backgroundColor: backgroundColors,
-                            borderColor: borderColors,
-                            borderWidth: 1
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        indexAxis: 'y',
-                        scales: {
-                            x: {
-                                beginAtZero: true
-                            },
-                            y: {
-                                ticks: {
-                                    autoSkip: false,
-                                    font: {
-                                        size: 10
-                                    }
-                                }
-                            }
-                        },
-                        plugins: {
-                            legend: {
-                                display: false
-                            }
-                        }
-                    }
-                });
-            }
-
-            function renderHistorial(filterMode = 'TODAY') {
-                historialTableBody.innerHTML = '';
-                
-                let movimientosFiltrados = [...dbMovimientos].sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
-                
-                if (filterMode === 'TODAY') {
-                    const today = new Date().toISOString().split('T')[0];
-                    movimientosFiltrados = movimientosFiltrados.filter(mov => mov.fecha.split('T')[0] === today);
-                }
-
-                if (movimientosFiltrados.length === 0) {
-                    const message = filterMode === 'TODAY' ? 'No hay movimientos registrados para el día de hoy.' : 'No hay movimientos registrados.';
-                    historialTableBody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500">${message}</td></tr>`;
-                    return;
-                }
-
-                movimientosFiltrados.forEach(mov => {
-                    const producto = getProductoById(mov.productoId);
-                    if (!producto) return; 
-
-                    const tr = document.createElement('tr');
-                    tr.className = 'border-b border-amber-100';
-                    tr.innerHTML = `
-                        <td class="p-3 text-sm">${new Date(mov.fecha).toLocaleString('es-ES')}</td>
-                        <td class="p-3 font-medium">${producto.nombre}</td>
-                        <td class="p-3">
-                            <span class="px-2 py-1 text-xs font-semibold rounded-full ${mov.tipo === 'ENTRADA' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
-                                ${mov.tipo}
-                            </span>
-                        </td>
-                        <td class="p-3 text-sm">${mov.cantidad.toLocaleString('es-ES')} ${mov.formato}</td>
-                        <td class="p-3 font-bold">${mov.tipo === 'ENTRADA' ? '+' : '-'}${mov.cantidadBase.toLocaleString('es-ES', { maximumFractionDigits: 2 })} ${producto.unidadBase}</td>
-                        <td class="p-3 text-sm text-gray-600">${mov.operario || '-'}</td>
-                    `;
-                    historialTableBody.appendChild(tr);
-                });
-            }
-
-            async function registrarMovimiento(e) {
-                e.preventDefault();
-                
-                const formData = new FormData(cargaForm);
-                const productoId = formData.get('producto');
-                const tipo = formData.get('tipo');
-                const formato = formData.get('formato');
-                const cantidad = parseFloat(formData.get('cantidad'));
-                const operario = formData.get('operario');
-                const fecha = formData.get('fecha');
-
-                if (!currentUserId) {
-                    showToast('Error: Usuario no autenticado.');
-                    return;
-                }
-
-                if (operario === OPERARIOS_AUTORIZADOS[0]) { 
-                    showToast('Error: Por favor, seleccione un operario válido.');
-                    return;
-                }
-                
-                if (cantidad <= 0 || isNaN(cantidad)) {
-                     showToast('Error: La cantidad debe ser un número positivo.');
-                     return;
-                }
-
-                const producto = getProductoById(productoId);
-                if (!producto) {
-                    showToast('Error: Producto no encontrado en la configuración.');
-                    return;
-                }
-
-                let cantidadBase = cantidad;
-
-                // Si el formato registrado es el FORMATO ALTERNO, usamos el FACTOR DE CONVERSION.
-                if (formato === producto.formatoAlterno && producto.formatoAlterno !== '-' && producto.factorConv !== 1) {
-                    cantidadBase = cantidad * producto.factorConv;
-                }
-                
-                // Si el formato registrado es la UNIDAD BASE (Kg, Unidad, Porción), la cantidad base es la cantidad.
-                
-                const nuevoMovimiento = {
-                    fecha: fecha, // Almacenar como string ISO para Firestore
-                    productoId,
-                    tipo,
-                    formato,
-                    cantidad,
-                    cantidadBase,
-                    operario: operario, // Ya no usamos el ID de usuario como fallback
-                    userId: currentUserId,
-                    timestamp: new Date().toISOString()
-                };
-
-                try {
-                    await addDoc(collection(db, MOVIMIENTOS_COLLECTION_PATH), nuevoMovimiento);
-                    
-                    cargaForm.reset();
-                    setDefaultDateTime();
-                    // Restaurar el valor inicial de Operario, forzando la selección
-                    operarioSelect.value = OPERARIOS_AUTORIZADOS[0];
-                    showToast('Movimiento registrado con éxito.');
-                } catch (error) {
-                    console.error("Error al registrar movimiento en Firestore:", error);
-                    showToast('Error al registrar movimiento.');
-                }
-            }
-
-            function showToast(message) {
-                toastMessage.textContent = message;
-                toastMessage.className = `hidden fixed top-20 right-5 ${message.includes('Error') ? 'bg-red-500' : 'bg-green-500'} text-white py-2 px-4 rounded-lg shadow-lg z-50`;
-                toastMessage.classList.remove('hidden');
-                setTimeout(() => {
-                    toastMessage.classList.add('hidden');
-                }, 3000);
-            }
-            
-            function setDefaultDateTime() {
-                const now = new Date();
-                now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-                document.getElementById('fecha').value = now.toISOString().slice(0,16);
-            }
-            
-            function cargarOperarios() {
-                operarioSelect.innerHTML = '';
-                OPERARIOS_AUTORIZADOS.forEach((nombre, index) => {
-                    const option = document.createElement('option');
-                    option.value = nombre;
-                    option.textContent = nombre;
-                    // La primera opción es el placeholder 'Seleccionar Operario'
-                    if (index === 0) {
-                        option.disabled = true;
-                        option.selected = true;
-                    }
-                    operarioSelect.appendChild(option);
-                });
-            }
-
-            // --- Funciones de Configuración Dinámica (Operarios) ---
-            
-            async function loadOperariosFromDB() {
-                try {
-                    const docRef = doc(db, CONFIG_OPERARIOS_DOC_PATH);
-                    const docSnap = await getDoc(docRef);
-                    const defaultOperators = ["Seleccionar Operario", "Juan Pérez (Producción)", "María Gómez (Producción)", "Carlos Ruiz (Ventas)", "Admin"];
-
-                    if (docSnap.exists()) {
-                        const data = docSnap.data();
-                        if (data.list && Array.isArray(data.list) && data.list.length > 1) {
-                            OPERARIOS_AUTORIZADOS = data.list[0] === defaultOperators[0] ? data.list : [defaultOperators[0], ...data.list.slice(1)];
-                        } else {
-                            OPERARIOS_AUTORIZADOS = defaultOperators;
-                            await setDoc(docRef, { list: OPERARIOS_AUTORIZADOS }); 
-                        }
-                    } else {
-                        OPERARIOS_AUTORIZADOS = defaultOperators;
-                        await setDoc(docRef, { list: OPERARIOS_AUTORIZADOS });
-                    }
-                } catch (error) {
-                    console.error("Error al cargar operarios:", error);
-                    OPERARIOS_AUTORIZADOS = ["Seleccionar Operario", "Error de Carga"]; 
-                }
-                cargarOperarios(); 
-            }
-
-            async function saveOperariosToDB() {
-                const textareaValue = operarioConfigArea.value;
-                let newOperators = textareaValue.split('\n')
-                    .map(name => name.trim())
-                    .filter(name => name !== "")
-                    .filter((value, index, self) => self.indexOf(value) === index);
-                
-                const listToSave = [OPERARIOS_AUTORIZADOS[0], ...newOperators];
-                
-                if (listToSave.length <= 1) {
-                    showToast('Error: Debe ingresar al menos un operario.');
-                    return;
-                }
-
-                try {
-                    const docRef = doc(db, CONFIG_OPERARIOS_DOC_PATH);
-                    await setDoc(docRef, { list: listToSave });
-                    
-                    OPERARIOS_AUTORIZADOS = listToSave;
-                    cargarOperarios();
-                    showToast('Lista de operarios guardada con éxito.');
-                } catch (error) {
-                    console.error("Error al guardar operarios:", error);
-                    showToast('Error al guardar la lista de operarios.');
-                }
-            }
-
-            // --- Funciones de Configuración Dinámica (Productos) ---
-
-            function parseProducts(csvString) {
-                const lines = csvString.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-                const products = [];
-                
-                lines.forEach((line, index) => {
-                    const parts = line.split('|').map(p => p.trim());
-                    if (parts.length !== 5) {
-                        throw new Error(`Línea ${index + 1} incompleta o incorrecta. Se esperaban 5 campos.`);
-                    }
-
-                    const [nombre, unidadBase, formatoAlterno, factorConv, stockInicial] = parts;
-                    
-                    const id = `P${String(index + 1).padStart(2, '0')}`;
-                    const fConv = parseFloat(factorConv);
-                    const sInicial = parseFloat(stockInicial);
-
-                    if (isNaN(fConv) || isNaN(sInicial) || fConv < 0 || sInicial < 0) {
-                        throw new Error(`Línea ${index + 1}: Factor Conv. (${factorConv}) o Stock Inicial (${sInicial}) no son números válidos.`);
-                    }
-
-                    products.push({
-                        id,
-                        nombre,
-                        unidadBase,
-                        formatoAlterno: formatoAlterno === '-' ? '-' : formatoAlterno,
-                        factorConv: fConv,
-                        stockInicial: sInicial,
-                    });
-                });
-                return products;
-            }
-            
-            async function loadProductosFromDB() {
-                try {
-                    const docRef = doc(db, CONFIG_PRODUCTOS_DOC_PATH);
-                    const docSnap = await getDoc(docRef);
-                    
-                    if (docSnap.exists()) {
-                        const data = docSnap.data();
-                        const productsCSV = data.list;
-                        
-                        try {
-                            dbProductos = parseProducts(productsCSV);
-                        } catch (e) {
-                            console.error("Error al parsear productos de la DB, usando por defecto:", e);
-                            dbProductos = parseProducts(defaultDbProductosCSV);
-                            await setDoc(docRef, { list: defaultDbProductosCSV });
-                        }
-                    } else {
-                        // Documento no existe, usamos el default y lo guardamos
-                        dbProductos = parseProducts(defaultDbProductosCSV);
-                        await setDoc(docRef, { list: defaultDbProductosCSV });
-                    }
-                } catch (error) {
-                    console.error("Error al cargar productos desde Firestore:", error);
-                    dbProductos = parseProducts(defaultDbProductosCSV); 
-                }
-            }
-
-            async function saveProductosToDB() {
-                const csvString = productosConfigArea.value;
-                let newProducts;
-
-                try {
-                    newProducts = parseProducts(csvString);
-                } catch (e) {
-                    showToast(`Error al guardar: ${e.message}`);
-                    return;
-                }
-
-                if (newProducts.length === 0) {
-                    showToast('Error: La lista de productos no puede estar vacía.');
-                    return;
-                }
-
-                try {
-                    const docRef = doc(db, CONFIG_PRODUCTOS_DOC_PATH);
-                    await setDoc(docRef, { list: csvString });
-                    
-                    // Actualizamos la variable global y la UI
-                    dbProductos = newProducts;
-                    // Actualizamos la lista de productos y los formatos
-                    populateProductDropdown(); 
-                    renderPanel();
-                    showToast('Lista de productos y conversiones guardada con éxito.');
-                } catch (error) {
-                    console.error("Error al guardar productos:", error);
-                    showToast('Error al guardar la lista de productos.');
-                }
-            }
-            
-            function renderConfiguracion() {
-                // Rellena la lista de operarios
-                if (operarioConfigArea) {
-                    operarioConfigArea.value = OPERARIOS_AUTORIZADOS.slice(1).join('\n');
-                }
-                // Rellena la lista de productos (en formato CSV)
-                if (productosConfigArea) {
-                    // Reconstruye el CSV desde el objeto dbProductos para mostrar la configuración actual
-                    const currentCSV = dbProductos.map(p => 
-                        `${p.nombre} | ${p.unidadBase} | ${p.formatoAlterno} | ${p.factorConv} | ${p.stockInicial}`
-                    ).join('\n');
-                    productosConfigArea.value = currentCSV;
-                }
-            }
-
-            // --- Inicialización y Listeners ---
-            
-            function startRealtimeListener(userId) {
-                const q = query(collection(db, MOVIMIENTOS_COLLECTION_PATH));
-                
-                onSnapshot(q, (snapshot) => {
-                    dbMovimientos = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    renderPanel();
-                    // Renderiza el historial con el filtro actual
-                    renderHistorial(historialFilter.value); 
-                    isFirebaseReady = true;
-                    const activeNavId = Object.keys(NAVS).find(key => NAVS[key].classList.contains('active-tab'));
-                    if (activeNavId) {
-                        VISTAS[activeNavId].classList.add('active-view');
-                    }
-                }, (error) => {
-                    console.error("Error al escuchar los movimientos:", error);
-                    showToast('Error de conexión con la base de datos.');
-                });
-            }
-
-            async function inicializarApp() {
-                
-                // 1. Inicializar la UI de productos (dropdowns) con datos por defecto iniciales
-                // Esto se hace antes de cargar la DB para que la UI no esté vacía
-                dbProductos = parseProducts(defaultDbProductosCSV);
-                populateProductDropdown(); 
-                
-                // 2. Configurar Autenticación
-                userIdDisplay.textContent = 'Autenticando...';
-                
-                onAuthStateChanged(auth, async (user) => {
-                    if (user) {
-                        // USUARIO AUTENTICADO/ANÓNIMO: Ahora podemos cargar la configuración de la DB
-                        currentUserId = user.uid;
-                        userIdDisplay.textContent = currentUserId;
-                        
-                        // --- FIX APLICADO: Cargar la configuración de la DB AHORA que tenemos permisos ---
-                        await loadOperariosFromDB(); 
-                        await loadProductosFromDB(); 
-                        
-                        // Volver a poblar el dropdown de productos con los datos de la DB (si cambiaron)
-                        populateProductDropdown();
-                        
-                        // Iniciar el listener de movimientos
-                        startRealtimeListener(currentUserId);
-                    } else {
-                        // USUARIO NO AUTENTICADO: Intentar iniciar sesión (anónima o con token)
-                        try {
-                             if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                                await signInWithCustomToken(auth, __initial_auth_token);
-                             } else {
-                                await signInAnonymously(auth);
-                             }
-                             // Si el sign-in es exitoso, onAuthStateChanged se volverá a llamar con el usuario.
-                        } catch (error) {
-                            // ERROR FATAL DE AUTENTICACIÓN
-                            console.error("Error en la autenticación:", error);
-                            userIdDisplay.textContent = 'ERROR (Usando ID Temporal)';
-                            currentUserId = crypto.randomUUID(); 
-                            
-                            // Si falla la autenticación, cargamos la configuración por defecto y el listener fallará si las reglas son estrictas.
-                            // Las funciones loadOperariosFromDB/loadProductosFromDB ya manejan el fallback a datos por defecto si el getDoc falla.
-                            await loadOperariosFromDB(); 
-                            await loadProductosFromDB(); 
-                            
-                            startRealtimeListener(currentUserId);
-                        }
-                    }
-                });
-
-                // 3. Configurar Eventos
-                NAVS.panel.addEventListener('click', () => navegar('panel'));
-                NAVS.registrar.addEventListener('click', () => navegar('registrar'));
-                NAVS.historial.addEventListener('click', () => navegar('historial'));
-                NAVS.configuracion.addEventListener('click', () => navegar('configuracion'));
-
-                // FIX: El listener ahora solo llama a updateFormatDropdown, y la carga inicial es más robusta.
-                productoSelect.addEventListener('change', (e) => updateFormatDropdown(e.target.value)); 
-                
-                cargaForm.addEventListener('submit', registrarMovimiento);
-                searchInput.addEventListener('input', renderPanel);
-                
-                saveOperariosBtn.addEventListener('click', saveOperariosToDB);
-                saveProductosBtn.addEventListener('click', saveProductosToDB);
-
-                historialFilter.addEventListener('change', (e) => renderHistorial(e.target.value)); // Listener para el nuevo filtro
-                
-                setDefaultDateTime();
-            }
-
-            inicializarApp();
-        });
-    </script>
-</body>
-</html>
+    <header class="bg-white shadow-md">
+        <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center flex-wrap">
+            <h1 class="text-2xl sm:text-3xl font-bold text-amber-900">Gestor de Stock de Producción</h1>
+            <div class="mt-2 sm:mt-0 text-right text-xs text-amber-700">
+                <p>Usuario Actual (ID):</p>
+                <p id="user-id" class="font-mono text-amber-900 font-semibold truncate">Cargando...</p>
+            </div>
+        </div>
+    </header>
+
+    <nav class="bg-amber-800 text-amber-100 shadow-lg">
+        <div class="container mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row">
+            <button id="nav-panel" class="nav-tab active-tab">Panel de Stock</button>
+            <button id="nav-registrar" class="nav-tab">Registrar Movimiento</button>
+            <button id="nav-historial" class="nav-tab">Historial</button>
+            <button id="nav-configuracion" class="nav-tab">Configuración</button>
+        </div>
+    </nav>
+
+    <main class="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+        <div id="toast-message" class="hidden fixed top-20 right-5 bg-green-500 text-white py-2 px-4 rounded-lg shadow-lg z-50">
+            Movimiento registrado con éxito.
+        </div>
+
+                <section id="view-panel" class="view active-view space-y-6">
+            <p class="text-lg text-amber-800">
+                Bienvenido al Panel de Stock de Producción. Aquí puede monitorear el estado actual de su inventario, ver la producción total del día para el traspaso de lote y consultar los detalles de cada producto. **Los datos se actualizan en tiempo real.**
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="bg-white p-6 rounded-lg shadow-md">
+                    <h3 class="text-lg font-semibold text-amber-800">Stock Global (Base)</h3>
+                    <p id="kpi-total-unidades" class="text-4xl font-bold text-amber-900">0</p>
+                    <span class="text-sm text-gray-500">(Stock total en unidades base: Unidades, Kg, Porciones)</span>
+                </div>
+                                <div class="bg-white p-6 rounded-lg shadow-md">
+                    <h3 class="text-lg font-semibold text-amber-800">Producción Total (Hoy)</h3>
+                    <p id="kpi-produccion-hoy" class="text-4xl font-bold text-green-600">0</p>
+                    <span class="text-sm text-gray-500">(Suma de todas las Entradas de hoy, en sus unidades base)</span>
+                </div>
+                                <div class="bg-white p-6 rounded-lg shadow-md">
+                    <h3 class="text-lg font-semibold text-amber-800">Productos con Stock Bajo</h3>
+                    <p id="kpi-stock-bajo" class="text-4xl font-bold text-red-600">0</p>
+                    <span class="text-sm text-gray-500">(Productos bajo el límite de 20 unidades base)</span>
+                </div>
+            </div>
+            
+            <div class="bg-white p-4 sm:p-6 rounded-lg shadow-md">
+                <h2 class="text-2xl font-semibold mb-4 text-amber-900">Niveles de Stock (Unidades Base)</h2>
+                <div class="chart-container" style="position: relative; height: 50vh; max-height: 450px; width: 100%; max-width: 1000px; margin-left: auto; margin-right: auto;">
+                    <canvas id="stockChart"></canvas>
+                </div>
+            </div>
+
+            <div class="bg-white p-4 sm:p-6 rounded-lg shadow-md">
+                <h2 class="text-2xl font-semibold mb-4 text-amber-900">Inventario Detallado</h2>
+                <input id="searchInput" type="text" placeholder="Buscar producto por nombre..." class="w-full p-3 border border-amber-300 rounded-md mb-4 focus:outline-none focus:ring-2 focus:ring-amber-500">
+                <div class="overflow-x-auto">
+                    <table class="w-full min-w-max">
+                        <thead class="bg-amber-100">
+                            <tr>
+                                <th class="p-3 text-left font-semibold text-amber-800">CÓDIGO</th>
+                                <th class="p-3 text-left font-semibold text-amber-800">Producto</th>
+                                <th class="p-3 text-left font-semibold text-amber-800">Unidad Base</th>
+                                <th class="p-3 text-left font-semibold text-amber-800">Stock (Base)</th>
+                                <th class="p-3 text-left font-semibold text-amber-800">Stock (Alterno)</th>
+                                <th class="p-3 text-left font-semibold text-amber-800">Formato Alterno</th>
+                            </tr>
+                        </thead>
+                        <tbody id="inventoryTableBody">
+                            <tr><td colspan="6" class="p-4 text-center text-gray-500">Cargando datos...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+                <section id="view-registrar" class="view">
+            <p class="text-lg text-amber-800 mb-6 max-w-2xl mx-auto">
+                Utilice este formulario para registrar nuevas producciones (Entradas) o ventas/consumos (Salidas). Los datos se actualizarán en el panel de control automáticamente.
+            </p>
+            <form id="cargaForm" class="bg-white p-6 sm:p-8 rounded-lg shadow-md max-w-2xl mx-auto space-y-6">
+                <div>
+                    <label for="producto" class="block text-sm font-medium text-amber-800 mb-1">Producto</label>
+                    <select id="producto" name="producto" required class="w-full p-3 border border-amber-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-amber-500">
+                    </select>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    <div>
+                        <label for="tipo" class="block text-sm font-medium text-amber-800 mb-1">Tipo de Movimiento</label>
+                        <select id="tipo" name="tipo" required class="w-full p-3 border border-amber-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-amber-500">
+                            <option value="ENTRADA">ENTRADA (Producción)</option>
+                            <option value="SALIDA">SALIDA (Venta/Consumo)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="formato" class="block text-sm font-medium text-amber-800 mb-1">Formato de Registro</label>
+                        <select id="formato" name="formato" required class="w-full p-3 border border-amber-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-amber-500">
+                      S</select>
+                    </div>
+                </div>
+
+                <div>
+                    <label for="cantidad" class="block text-sm font-medium text-amber-800 mb-1">Cantidad</label>
+                    <input type="number" id="cantidad" name="cantidad" min="0.01" step="0.01" required class="w-full p-3 border border-amber-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500" placeholder="Ej: 2 (para latas) o 15 (para unidades/Kg)">
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                                        <div>
+                        <label for="operario" class="block text-sm font-medium text-amber-800 mb-1">Operario</label>
+                        <select id="operario" name="operario" required class="w-full p-3 border border-amber-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-amber-500">
+                                                    </select>
+                    </div>
+                    <div>
+                        <label for="fecha" class="block text-sm font-medium text-amber-800 mb-1">Fecha y Hora</label>
+                        <input type="datetime-local" id="fecha" name="fecha" required class="w-full p-3 border border-amber-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500">
+                    </div>
+                </div>
+
+                <div>
+                    <button type="submit" class="w-full bg-amber-600 text-white font-bold py-3 px-6 rounded-md hover:bg-amber-700 transition duration-300 text-lg">
+                        Registrar Movimiento
+                    </button>
+                </div>
+            </form>
+        </section>
+
+                <section id="view-historial" class="view space-y-6">
+            <p class="text-lg text-amber-800">
+                Registro cronológico de movimientos. **Por defecto se muestran solo los movimientos del día actual** para facilitar el traspaso de lote.
+            </p>
+            
+            <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center bg-white p-4 rounded-lg shadow-md">
+                <h2 class="text-xl font-semibold text-amber-900 mb-2 sm:mb-0">Filtro de Historial</h2>
+                <select id="historialFilter" class="p-2 border border-amber-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-amber-500">
+                    <option value="TODAY">Movimientos de Hoy</option>
+                    <option value="ALL">Todos los Movimientos</option>
+                </select>
+            </div>
+            
+            <div class="bg-white p-4 sm:p-6 rounded-lg shadow-md">
+                <div class="overflow-x-auto">
+                    <table class="w-full min-w-max">
+                        <thead class="bg-amber-100">
+                            <tr>
+                                <th class="p-3 text-left font-semibold text-amber-800">Fecha/Hora</th>
+                                <th class="p-3 text-left font-semibold text-amber-800">Producto</th>
+                                <th class="p-3 text-left font-semibold text-amber-800">Tipo</th>
+                                <th class="p-3 text-left font-semibold text-amber-800">Registro</th>
+                                <th class="p-3 text-left font-semibold text-amber-800">Cant. Base</th>
+                                <th class="p-3 text-left font-semibold text-amber-800">Operario</th>
+                            </tr>
+                        </thead>
+                        <tbody id="historialTableBody">
+                            <tr>
+                                <td colspan="6" class="p-4 text-center text-gray-500">Cargando datos...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+        
+                <section id="view-configuracion" class
