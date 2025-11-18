@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Control Panadería - v8.0 Final</title>
+    <title>Panadería Control de Producción</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -17,8 +17,7 @@
         // ============================================================
         // 1. CONFIGURACIÓN DE SEGURIDAD
         // ============================================================
-        const CLAVE_ADMIN = "50256LP"; 
-        
+        const CLAVE_ADMIN = "2550LP"; 
 
         const firebaseConfig = {
   apiKey: "AIzaSyBKV1mVfhFZJgeZRu6FHgz-2_KVrKDlHoc",
@@ -28,8 +27,7 @@
   messagingSenderId: "230493635490",
   appId: "1:230493635490:web:f4b780864dbc64eebda8fb"
 };
-      
-
+        
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
         const auth = firebase.auth();
@@ -63,6 +61,7 @@
 
         // --- CONFIGURACIÓN ---
         
+        // LA LISTA COMPLETA DE PRODUCTOS IRÁ AQUÍ
         const PRODUCTOS_DEFAULT = `Media Luna Dulce | Unidad | Lata | 12 | 0
 Media Luna Salada | Unidad | Lata | 12 | 0
 Surtidas Dulces | Unidad | Bandeja | 6 | 0
@@ -75,9 +74,7 @@ Pan Francés | Kg | Bolsa | 20 | 0`;
         const OPERARIOS_DEFAULT = "Mañana\nTarde\nNoche";
 
         async function cargarConfiguracionGeneral() {
-             // Lógica para cargar productos y operarios (omitted for brevity, assume the previous v7 logic is here)
-             // ...
-             try {
+            try {
                 // Cargar Productos
                 const docProd = await db.collection(COLL_CONFIG).doc("productos_lista").get();
                 let csvProd = PRODUCTOS_DEFAULT;
@@ -168,15 +165,14 @@ Pan Francés | Kg | Bolsa | 20 | 0`;
             const stockMap = {};
             productosGlobal.forEach(p => stockMap[p.id] = p.stockInicial);
             
-            // Mapas para la reconciliación diaria
             const produccionDiariaMap = {}; 
             const sobranteDiarioMap = {};
-            const produccionHistoricaMap = {}; // Para el gráfico
+            const produccionHistoricaMap = {}; 
 
             [...movimientosGlobal].reverse().forEach(m => {
-                // Stock General (siempre positivo/negativo)
+                // Stock General
                 if (m.tipo !== 'SALIDA') stockMap[m.productoId] += m.cantidadBase;
-                else stockMap[m.productoId] -= Math.abs(m.cantidadBase); // Usa abs para evitar doble negativo
+                else stockMap[m.productoId] -= Math.abs(m.cantidadBase); 
 
                 // Reconciliación Diaria (solo ENTRADA y SOBRANTE de hoy)
                 if (esHoy(m.fecha)) {
@@ -196,7 +192,7 @@ Pan Francés | Kg | Bolsa | 20 | 0`;
                 }
             });
 
-            // 1. Renderizar Tabla "Resumen del Día" con Reconciliación
+            // 1. Renderizar Tabla "Reconciliación Diaria"
             const tbodyHoy = document.getElementById('tabla-produccion-hoy');
             tbodyHoy.innerHTML = '';
             let hayDatosHoy = false;
@@ -297,7 +293,7 @@ Pan Francés | Kg | Bolsa | 20 | 0`;
 
             const prodId = document.getElementById('producto').value;
             const prod = productosGlobal.find(p => p.id === prodId);
-            const tipo = document.getElementById('tipo').value; // ENTRADA, SALIDA, SOBRANTE
+            const tipo = document.getElementById('tipo').value; 
             const formato = document.getElementById('formato').value;
             const cantidad = parseFloat(document.getElementById('cantidad').value);
             const operario = document.getElementById('operario').value;
@@ -311,7 +307,6 @@ Pan Francés | Kg | Bolsa | 20 | 0`;
                 formatoTexto = prod.alterno; 
             }
             
-            // Si es SALIDA, la cantidad base debe ser negativa para el cálculo de stock
             let cantBaseCalculo = cantBase;
             if (tipo === 'SALIDA') {
                  cantBaseCalculo = -cantBase;
@@ -515,8 +510,8 @@ Pan Francés | Kg | Bolsa | 20 | 0`;
             <div class="flex items-center gap-2">
                 <i class="fas fa-bread-slice text-2xl text-amber-300"></i>
                 <div>
-                    <h1 class="font-bold text-lg leading-tight">Panadería La Cuadra</h1>
-                    <p class="text-xs text-amber-300 opacity-80">Control de Producción</p>
+                    <h1 class="font-bold text-lg leading-tight">Panadería Control de Producción</h1>
+                    <p class="text-xs text-amber-300 opacity-80">Gestión de Stock en Tiempo Real</p>
                 </div>
             </div>
             <div class="flex items-center gap-2">
