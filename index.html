@@ -9,13 +9,12 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 
-    <script type="module">
-        // 1. Importamos las funciones de Firebase (Versión Web correcta)
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, addDoc, query, orderBy, limit, onSnapshot, doc, setDoc, getDoc, deleteDoc, getDocs, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 
-        // 2. TU CONFIGURACIÓN REAL (Ya la puse yo, no hace falta que la toques)
+    <script>
+        // --- 1. CONFIGURACIÓN (Tu clave real) ---
         const firebaseConfig = {
             apiKey: "AIzaSyBKV1mVfhFZJgeZRu6FHgz-2_KVrKDlHoc",
             authDomain: "mercaderia-f1699.firebaseapp.com",
@@ -25,33 +24,36 @@
             appId: "1:230493635490:web:f4b780864dbc64eebda8fb"
         };
 
-        // 3. INICIALIZACIÓN (Esto conecta todo)
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        const auth = getAuth(app);
+        // Inicializar Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
         
-        // Variables del sistema
+        // Variables Globales
         let currentUser = null;
         let productosGlobal = [];
         let movimientosGlobal = []; 
         
+        // Referencias
         const COLL_MOVIMIENTOS = "movimientos"; 
         const COLL_CONFIG = "configuracion";
 
-        // 4. LÓGICA DE CONEXIÓN
-        signInAnonymously(auth).catch((error) => alert("Error conexión: " + error.message));
-        
-        onAuthStateChanged(auth, (user) => {
-            if (user) {
-                currentUser = user;
-                // Cambiar ícono a verde cuando conecta
-                const statusIcon = document.getElementById('status-icon');
-                if(statusIcon) {
-                    statusIcon.classList.remove('text-red-500');
-                    statusIcon.classList.add('text-green-400');
+        // --- 2. INICIO DE SESIÓN ---
+        document.addEventListener('DOMContentLoaded', () => {
+            auth.signInAnonymously().catch((error) => {
+                alert("Error de conexión: " + error.message);
+            });
+
+            auth.onAuthStateChanged((user) => {
+                if (user) {
+                    currentUser = user;
+                    document.getElementById('status-icon').classList.replace('text-red-500', 'text-green-400');
+                    inicializarSistema();
                 }
-                inicializarSistema();
-            }
+            });
+            
+            // Poner fecha actual en el input
+            establecerFechaInput();
         });
 
         async function inicializarSistema() {
@@ -59,9 +61,7 @@
             escucharMovimientos();
         }
 
-        // --- GESTIÓN DE PRODUCTOS ---
-        
-        // Lista de productos completa
+        // --- 3. PRODUCTOS ---
         const PRODUCTOS_DEFAULT = `Media Luna Dulce | Unidad | Docena | 12 | 80
 Media Luna Salada | Unidad | Docena | 12 | 80
 Surtidas Dulces | Unidad | Bandeja | 6 | 60
@@ -90,15 +90,14 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 80`;
 
         async function cargarConfiguracionProductos() {
             try {
-                const docRef = doc(db, COLL_CONFIG, "productos_lista");
-                const docSnap = await getDoc(docRef);
+                const docRef = db.collection(COLL_CONFIG).doc("productos_lista");
+                const docSnap = await docRef.get();
                 
                 let csvUsar = PRODUCTOS_DEFAULT;
-                if (docSnap.exists()) {
+                if (docSnap.exists) {
                     csvUsar = docSnap.data().csv;
                 } else {
-                    // Si es la primera vez, guardamos la lista por defecto
-                    await setDoc(docRef, { csv: PRODUCTOS_DEFAULT });
+                    await docRef.set({ csv: PRODUCTOS_DEFAULT });
                 }
                 
                 document.getElementById('config-productos').value = csvUsar;
@@ -133,19 +132,20 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 80`;
             });
         }
 
-        // --- ESCUCHAR DATOS Y ACTUALIZAR PANTALLA ---
-
+        // --- 4. ESCUCHAR MOVIMIENTOS ---
         function escucharMovimientos() {
-            const q = query(collection(db, COLL_MOVIMIENTOS), orderBy("timestamp", "desc"));
-            
-            onSnapshot(q, (snapshot) => {
-                movimientosGlobal = [];
-                snapshot.forEach((doc) => movimientosGlobal.push({ id: doc.id, ...doc.data() }));
-                
-                actualizarPanelPrincipal();
-                actualizarHistorialVisual();
-                actualizarGraficos();
-            });
+            // Ordenar por timestamp descendente
+            db.collection(COLL_MOVIMIENTOS).orderBy("timestamp", "desc")
+                .onSnapshot((snapshot) => {
+                    movimientosGlobal = [];
+                    snapshot.forEach((doc) => {
+                        movimientosGlobal.push({ id: doc.id, ...doc.data() });
+                    });
+                    
+                    actualizarPanelPrincipal();
+                    actualizarHistorialVisual();
+                    actualizarGraficos();
+                });
         }
 
         function obtenerFechaLocal() {
@@ -162,22 +162,20 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 80`;
         function actualizarPanelPrincipal() {
             const stockMap = {};
             productosGlobal.forEach(p => stockMap[p.id] = p.stockInicial);
-            
             const produccionHoyMap = {}; 
 
-            // Recorremos movimientos del más viejo al más nuevo para el stock
+            // Recorrer movimientos (invertido para cálculo lógico de stock)
             [...movimientosGlobal].reverse().forEach(m => {
                 if (m.tipo === 'ENTRADA') stockMap[m.productoId] += m.cantidadBase;
                 else stockMap[m.productoId] -= m.cantidadBase;
 
-                // Para la tabla de "Hoy", solo sumamos las entradas de la fecha actual
                 if (m.tipo === 'ENTRADA' && esHoy(m.fecha)) {
                     if (!produccionHoyMap[m.productoId]) produccionHoyMap[m.productoId] = 0;
                     produccionHoyMap[m.productoId] += m.cantidadBase;
                 }
             });
 
-            // Renderizar Tarjetas
+            // Render Cards
             const grid = document.getElementById('grid-stock');
             grid.innerHTML = '';
             let alertaStock = 0;
@@ -197,7 +195,7 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 80`;
                 `;
             });
 
-            // Renderizar Tabla "Producción de Hoy"
+            // Render Tabla Hoy
             const tbodyHoy = document.getElementById('tabla-produccion-hoy');
             tbodyHoy.innerHTML = '';
             let totalKgItemsHoy = 0;
@@ -224,9 +222,121 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 80`;
             document.getElementById('kpi-alertas').innerText = alertaStock;
         }
 
-        // --- GRÁFICOS ---
-        let chartInstance = null;
+        // --- 5. FUNCIONES UI ---
+        
+        function guardarMovimiento(e) {
+            e.preventDefault();
+            if (!currentUser) return alert("Esperando conexión...");
+            
+            const btn = e.target.querySelector('button');
+            btn.disabled = true;
+            btn.innerText = "Guardando...";
 
+            const prodId = document.getElementById('producto').value;
+            const prod = productosGlobal.find(p => p.id === prodId);
+            const tipo = document.getElementById('tipo').value;
+            const formato = document.getElementById('formato').value;
+            const cantidad = parseFloat(document.getElementById('cantidad').value);
+            const operario = document.getElementById('operario').value;
+            const fecha = document.getElementById('fecha').value;
+
+            let cantBase = cantidad;
+            let formatoTexto = prod.unidad;
+            
+            if (formato === 'alterno') {
+                cantBase = cantidad * prod.factor;
+                formatoTexto = prod.alterno;
+            }
+
+            // Guardar usando sintaxis compatible
+            db.collection(COLL_MOVIMIENTOS).add({
+                productoId: prodId, productoNombre: prod.nombre,
+                tipo: tipo, cantidadOriginal: cantidad, formatoUsado: formatoTexto,
+                cantidadBase: cantBase, operario: operario, fecha: fecha,
+                timestamp: new Date().toISOString()
+            }).then(() => {
+                alert("Guardado OK");
+                e.target.reset();
+                establecerFechaInput();
+                actualizarFormato(); // reset dropdown
+            }).catch((err) => {
+                alert("Error: " + err.message);
+            }).finally(() => {
+                btn.disabled = false;
+                btn.innerText = "GUARDAR";
+            });
+        }
+
+        function actualizarFormato() {
+            const prodId = document.getElementById('producto').value;
+            if(!prodId) return;
+            
+            const p = productosGlobal.find(x => x.id === prodId);
+            const s = document.getElementById('formato');
+            s.innerHTML = '';
+            if(p) {
+                s.add(new Option(p.unidad + " (Base)", "base"));
+                if(p.alterno !== '-') s.add(new Option(p.alterno + " (x" + p.factor + ")", "alterno"));
+            }
+        }
+
+        function guardarConfiguracion() {
+            const nuevoCSV = document.getElementById('config-productos').value;
+            db.collection(COLL_CONFIG).doc("productos_lista").set({ csv: nuevoCSV })
+                .then(() => {
+                    procesarProductosCSV(nuevoCSV);
+                    alert("Lista actualizada.");
+                })
+                .catch(err => alert("Error: " + err.message));
+        }
+
+        function limpiarBaseDeDatos() {
+            const pass = prompt("ESCRIBE 'admin' PARA BORRAR TODO EL HISTORIAL:");
+            if (pass !== "admin") return alert("Contraseña incorrecta");
+            if (!confirm("¿Seguro? Se borrarán todos los movimientos.")) return;
+
+            // Borrado recursivo (cliente)
+            db.collection(COLL_MOVIMIENTOS).get().then(snapshot => {
+                snapshot.forEach(doc => {
+                    doc.ref.delete();
+                });
+                alert("Base de datos limpia.");
+            });
+        }
+
+        // Navegación
+        function cambiarVista(id) {
+            document.querySelectorAll('.vista').forEach(d => d.classList.add('hidden'));
+            document.getElementById(id).classList.remove('hidden');
+            document.querySelectorAll('.nav-btn').forEach(b => {
+                b.classList.remove('border-amber-300', 'text-white');
+                b.classList.add('text-amber-200');
+            });
+            const btn = document.getElementById('btn-' + id);
+            if(btn) {
+                 btn.classList.add('border-amber-300', 'text-white');
+                 btn.classList.remove('text-amber-200');
+            }
+        }
+
+        function actualizarHistorialVisual() {
+            const tb = document.getElementById('tabla-historial');
+            tb.innerHTML = '';
+            movimientosGlobal.slice(0, 50).forEach(m => {
+                tb.innerHTML += `
+                    <tr class="border-b text-sm hover:bg-gray-50">
+                        <td class="p-2">${m.fecha.slice(5,10)} ${m.fecha.slice(11,16)}</td>
+                        <td class="p-2 font-medium truncate max-w-[100px]">${m.productoNombre}</td>
+                        <td class="p-2"><span class="px-1 rounded ${m.tipo==='ENTRADA'?'bg-green-100 text-green-700':'bg-red-100 text-red-700'} text-xs font-bold">${m.tipo.charAt(0)}</span></td>
+                        <td class="p-2 font-bold text-right">${m.cantidadOriginal}</td>
+                        <td class="p-2 text-gray-500 text-xs">${m.operario}</td>
+                    </tr>
+                `;
+            });
+        }
+        
+        // Gráficos
+        let chartInstance = null;
         function actualizarGraficos() {
             const ctx = document.getElementById('graficoProduccion');
             if(!ctx) return;
@@ -263,118 +373,10 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 80`;
             });
         }
 
-        // --- INTERACCIÓN DEL USUARIO ---
-
-        window.guardarMovimiento = async function(e) {
-            e.preventDefault();
-            if (!currentUser) return alert("Esperando conexión...");
-            
-            const btn = e.target.querySelector('button');
-            btn.disabled = true;
-            btn.innerText = "Guardando...";
-
-            try {
-                const prodId = document.getElementById('producto').value;
-                const prod = productosGlobal.find(p => p.id === prodId);
-                const tipo = document.getElementById('tipo').value;
-                const formato = document.getElementById('formato').value;
-                const cantidad = parseFloat(document.getElementById('cantidad').value);
-                const operario = document.getElementById('operario').value;
-                const fecha = document.getElementById('fecha').value;
-
-                let cantBase = cantidad;
-                let formatoTexto = prod.unidad;
-                
-                if (formato === 'alterno') {
-                    cantBase = cantidad * prod.factor;
-                    formatoTexto = prod.alterno;
-                }
-
-                await addDoc(collection(db, COLL_MOVIMIENTOS), {
-                    productoId: prodId, productoNombre: prod.nombre,
-                    tipo: tipo, cantidadOriginal: cantidad, formatoUsado: formatoTexto,
-                    cantidadBase: cantBase, operario: operario, fecha: fecha,
-                    timestamp: new Date().toISOString()
-                });
-
-                alert("Guardado OK");
-                e.target.reset();
-                establecerFechaInput();
-
-            } catch (error) {
-                alert("Error: " + error.message);
-            } finally {
-                btn.disabled = false;
-                btn.innerText = "Guardar";
-            }
-        }
-
-        window.actualizarFormato = function() {
-            const p = productosGlobal.find(x => x.id === document.getElementById('producto').value);
-            const s = document.getElementById('formato');
-            s.innerHTML = '';
-            if(p) {
-                s.add(new Option(p.unidad + " (Base)", "base"));
-                if(p.alterno !== '-') s.add(new Option(p.alterno + " (x" + p.factor + ")", "alterno"));
-            }
-        }
-
-        window.guardarConfiguracion = async function() {
-            const nuevoCSV = document.getElementById('config-productos').value;
-            try {
-                await setDoc(doc(db, COLL_CONFIG, "productos_lista"), { csv: nuevoCSV });
-                procesarProductosCSV(nuevoCSV);
-                alert("Lista de productos actualizada.");
-            } catch(e) { alert("Error: " + e.message); }
-        }
-
-        window.limpiarBaseDeDatos = async function() {
-            const pass = prompt("ESCRIBE 'admin' PARA BORRAR TODO EL HISTORIAL:");
-            if (pass !== "admin") return alert("Contraseña incorrecta");
-
-            if (!confirm("¿Seguro? Se borrarán todos los movimientos.")) return;
-
-            const q = query(collection(db, COLL_MOVIMIENTOS));
-            const snapshot = await getDocs(q);
-            snapshot.forEach(async (d) => await deleteDoc(d.ref));
-            alert("Base de datos limpia.");
-        }
-
-        window.cambiarVista = function(id) {
-            document.querySelectorAll('.vista').forEach(d => d.classList.add('hidden'));
-            document.getElementById(id).classList.remove('hidden');
-            document.querySelectorAll('.nav-btn').forEach(b => {
-                b.classList.remove('border-amber-300', 'text-white');
-                b.classList.add('text-amber-200');
-            });
-            const btn = document.getElementById('btn-' + id);
-            if(btn) {
-                 btn.classList.add('border-amber-300', 'text-white');
-                 btn.classList.remove('text-amber-200');
-            }
-        }
-
-        function actualizarHistorialVisual() {
-            const tb = document.getElementById('tabla-historial');
-            tb.innerHTML = '';
-            movimientosGlobal.slice(0, 50).forEach(m => {
-                tb.innerHTML += `
-                    <tr class="border-b text-sm hover:bg-gray-50">
-                        <td class="p-2">${m.fecha.slice(5,10)} ${m.fecha.slice(11,16)}</td>
-                        <td class="p-2 font-medium truncate max-w-[100px]">${m.productoNombre}</td>
-                        <td class="p-2"><span class="px-1 rounded ${m.tipo==='ENTRADA'?'bg-green-100 text-green-700':'bg-red-100 text-red-700'} text-xs font-bold">${m.tipo.charAt(0)}</span></td>
-                        <td class="p-2 font-bold text-right">${m.cantidadOriginal}</td>
-                        <td class="p-2 text-gray-500 text-xs">${m.operario}</td>
-                    </tr>
-                `;
-            });
-        }
-
         function establecerFechaInput() {
-            document.getElementById('fecha').value = obtenerFechaLocal();
+            const el = document.getElementById('fecha');
+            if(el) el.value = obtenerFechaLocal();
         }
-
-        window.addEventListener('DOMContentLoaded', establecerFechaInput);
 
     </script>
 </head>
@@ -386,10 +388,13 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 80`;
                 <i class="fas fa-bread-slice text-2xl text-amber-300"></i>
                 <div>
                     <h1 class="font-bold text-lg leading-tight">Panadería</h1>
-                    <p class="text-xs text-amber-300 opacity-80">Control v3.0</p>
+                    <p class="text-xs text-amber-300 opacity-80">Control Universal v4</p>
                 </div>
             </div>
-            <i id="status-icon" class="fas fa-circle text-red-500 text-xs"></i>
+            <div class="flex items-center gap-2">
+                <span class="text-xs text-amber-200 hidden sm:inline">Estado:</span>
+                <i id="status-icon" class="fas fa-circle text-red-500 text-xs"></i>
+            </div>
         </div>
     </header>
 
@@ -436,7 +441,9 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 80`;
                         <thead class="text-xs text-gray-500 border-b">
                             <tr><th class="text-left pb-1">Item</th><th class="text-right pb-1">Total</th><th class="text-right pb-1">Ud.</th></tr>
                         </thead>
-                        <tbody id="tabla-produccion-hoy"></tbody>
+                        <tbody id="tabla-produccion-hoy">
+                            <tr><td colspan="3" class="text-center text-xs text-gray-400 py-2">Cargando datos...</td></tr>
+                        </tbody>
                     </table>
                 </div>
             </div>
@@ -454,4 +461,74 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 80`;
 
         <div id="vista-carga" class="vista hidden container mx-auto max-w-md">
             <div class="bg-white p-5 rounded-lg shadow-lg space-y-4">
-                <h2 class="text-lg font-bold text-gray-70
+                <h2 class="text-lg font-bold text-gray-700 text-center">Registrar Movimiento</h2>
+                <form onsubmit="guardarMovimiento(event)" class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500">PRODUCTO</label>
+                        <select id="producto" onchange="actualizarFormato()" required class="input-field w-full p-3 border rounded bg-white"></select>
+                    </div>
+                    <div class="flex gap-2">
+                        <div class="w-1/2">
+                            <label class="block text-xs font-bold text-gray-500">ACCIÓN</label>
+                            <select id="tipo" class="input-field w-full p-3 border rounded bg-white">
+                                <option value="ENTRADA">Producción</option>
+                                <option value="SALIDA">Venta/Salida</option>
+                            </select>
+                        </div>
+                        <div class="w-1/2">
+                            <label class="block text-xs font-bold text-gray-500">UNIDAD</label>
+                            <select id="formato" class="input-field w-full p-3 border rounded bg-white"><option value="base">Base</option></select>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500">CANTIDAD</label>
+                        <input type="number" id="cantidad" step="0.01" required class="input-field w-full p-3 border rounded text-center text-xl font-bold text-amber-700" placeholder="0">
+                    </div>
+                    <div class="flex gap-2">
+                        <div class="w-1/2">
+                            <label class="block text-xs font-bold text-gray-500">OPERARIO</label>
+                            <select id="operario" class="input-field w-full p-3 border rounded bg-white">
+                                <option>Mañana</option><option>Tarde</option><option>Noche</option>
+                            </select>
+                        </div>
+                        <div class="w-1/2">
+                            <label class="block text-xs font-bold text-gray-500">FECHA</label>
+                            <input type="datetime-local" id="fecha" required class="input-field w-full p-3 border rounded text-xs">
+                        </div>
+                    </div>
+                    <button type="submit" class="w-full bg-amber-600 text-white py-4 rounded-lg font-bold shadow hover:bg-amber-700 transition">GUARDAR</button>
+                </form>
+            </div>
+        </div>
+
+        <div id="vista-historial" class="vista hidden container mx-auto max-w-4xl">
+            <div class="bg-white rounded-lg shadow overflow-hidden">
+                <div class="p-3 bg-gray-100 border-b font-bold text-gray-600 text-sm">Últimos 50 Movimientos</div>
+                <div class="overflow-x-auto">
+                    <table class="w-full whitespace-nowrap">
+                        <thead class="bg-gray-50 text-xs text-gray-500 uppercase">
+                            <tr><th class="p-2 text-left">Fecha</th><th class="p-2 text-left">Item</th><th class="p-2 text-left">Acc</th><th class="p-2 text-right">Cant</th><th class="p-2 text-left">Op</th></tr>
+                        </thead>
+                        <tbody id="tabla-historial"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="vista-config" class="vista hidden container mx-auto max-w-lg space-y-6">
+            <div class="bg-white p-4 rounded-lg shadow">
+                <h3 class="font-bold text-gray-800 mb-2 text-sm">Editar Productos (CSV)</h3>
+                <textarea id="config-productos" class="w-full border p-2 text-xs font-mono h-32 rounded bg-gray-50"></textarea>
+                <button onclick="guardarConfiguracion()" class="mt-2 w-full bg-blue-600 text-white py-2 rounded font-bold text-sm">Guardar Cambios</button>
+            </div>
+
+            <div class="bg-red-50 p-4 rounded-lg shadow border border-red-100 text-center">
+                <h3 class="font-bold text-red-700 mb-2 text-sm">Zona de Peligro</h3>
+                <button onclick="limpiarBaseDeDatos()" class="w-full bg-red-600 text-white py-3 rounded font-bold shadow hover:bg-red-700 text-sm">
+                    <i class="fas fa-trash-alt mr-2"></i>BORRAR BASE DE DATOS
+                </button>
+            </div>
+        </div>
+    </main>
+</body>
+</html>
