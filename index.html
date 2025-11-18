@@ -1,636 +1,441 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestor de Stock de Producción - Panadería</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-        <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, query, onSnapshot, setLogLevel, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        
-        // CORRECCIÓN 1: Usar la configuración DINÁMICA de Firebase Hosting
-        // Estas variables son "inyectadas" por Firebase cuando subes el sitio.
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control de Mercadería - Panadería</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 
-        // Inicializar Firebase UNA SOLA VEZ
-        const app = initializeApp(firebaseConfig);
+    <script type="module">
+        // 1. Importamos las funciones necesarias
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, collection, addDoc, getDocs, query, orderBy, limit, onSnapshot, doc, setDoc, getDoc, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+// Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
 
-        // Asignar todo a 'window' para que el script principal lo vea
-        window.firebaseApp = app;
-        window.auth = getAuth(app);
-        window.db = getFirestore(app);
-        
-        setLogLevel('Debug');
-        
-        window.getAuth = getAuth;
-        window.signInAnonymously = signInAnonymously;
-        window.signInWithCustomToken = signInWithCustomToken;
-        window.onAuthStateChanged = onAuthStateChanged;
-        window.collection = collection;
-        window.addDoc = addDoc;
-        window.query = query;
-        window.onSnapshot = onSnapshot;
-        window.appId = appId; // <-- EXPORTAR EL APP_ID DINÁMICO
-        window.doc = doc;
-        window.getDoc = getDoc;
-        window.setDoc = setDoc;
-    </script>
-    <style>
-        .nav-tab {
-            padding: 1rem 1.5rem;
-            cursor: pointer;
-            font-weight: 500;
-            border-bottom: 4px solid transparent;
-            transition: all 0.3s ease;
-        }
-        .nav-tab:hover {
-            background-color: #a16207; 
-        }
-        .nav-tab.active-tab {
-            border-color: #f59e0b; 
-            color: #ffffff;
-            font-weight: 600;
-        }
-        .view {
-            display: none;
-        }
-        .view.active-view {
-            display: block;
-        }
-    </style>
-</head>
-<body class="bg-amber-50 font-sans text-amber-900">
+// Your web app's Firebase configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyBKV1mVfhFZJgeZRu6FHgz-2_KVrKDlHoc",
+  authDomain: "mercaderia-f1699.firebaseapp.com",
+  projectId: "mercaderia-f1699",
+  storageBucket: "mercaderia-f1699.firebasestorage.app",
+  messagingSenderId: "230493635490",
+  appId: "1:230493635490:web:f4b780864dbc64eebda8fb"
+};
 
-    <header class="bg-white shadow-md">
-        <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center flex-wrap">
-            <h1 class="text-2xl sm:text-3xl font-bold text-amber-900">Gestor de Stock de Producción</h1>
-            <div class="mt-2 sm:mt-0 text-right text-xs text-amber-700">
-                <p>Usuario Actual (ID):</p>
-                <p id="user-id" class="font-mono text-amber-900 font-semibold truncate">Cargando...</p>
-            </div>
-        </div>
-    </header>
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+       
 
-    <nav class="bg-amber-800 text-amber-100 shadow-lg">
-        <div class="container mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row">
-            <button id="nav-panel" class="nav-tab active-tab">Panel de Stock</button>
-            <button id="nav-registrar" class="nav-tab">Registrar Movimiento</button>
-            <button id="nav-historial" class="nav-tab">Historial</button>
-            <button id="nav-configuracion" class="nav-tab">Configuración</button>
-        </div>
-    </nav>
+        // ==========================================
+        // FIN DE LA CONFIGURACIÓN
+        // ==========================================
 
-    <main class="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        // Inicializamos la App
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        
+        // Variables globales para la app
+        let currentUser = null;
+        let productosGlobal = [];
+        
+        // Referencias a colecciones
+        // Usamos una estructura simple sin appId dinámico para evitar errores de ruta
+        const COLL_MOVIMIENTOS = "movimientos"; 
+        const COLL_CONFIG = "configuracion";
 
-        <div id="toast-message" class="hidden fixed top-20 right-5 bg-green-500 text-white py-2 px-4 rounded-lg shadow-lg z-50">
-            Movimiento registrado con éxito.
-        </div>
+        // Autenticación Anónima
+        signInAnonymously(auth).then(() => {
+            console.log("Autenticado anónimamente");
+        }).catch((error) => {
+            console.error("Error auth:", error);
+            alert("Error de conexión con la base de datos: " + error.message);
+        });
 
-                <section id="view-panel" class="view active-view space-y-6">
-            <p class="text-lg text-amber-800">
-                Bienvenido al Panel de Stock de Producción. Aquí puede monitorear el estado actual de su inventario, ver la producción total del día para el traspaso de lote y consultar los detalles de cada producto. **Los datos se actualizan en tiempo real.**
-            </p>
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                currentUser = user;
+                document.getElementById('status-con').innerHTML = '<span class="text-green-500"><i class="fas fa-wifi"></i> Conectado</span>';
+                cargarDatosIniciales();
+                escucharMovimientos();
+            } else {
+                document.getElementById('status-con').innerHTML = '<span class="text-red-500"><i class="fas fa-times"></i> Desconectado</span>';
+            }
+        });
 
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div class="bg-white p-6 rounded-lg shadow-md">
-                    <h3 class="text-lg font-semibold text-amber-800">Stock Global (Base)</h3>
-                    <p id="kpi-total-unidades" class="text-4xl font-bold text-amber-900">0</p>
-                    <span class="text-sm text-gray-500">(Stock total en unidades base: Unidades, Kg, Porciones)</span>
-                </div>
-                                <div class="bg-white p-6 rounded-lg shadow-md">
-                    <h3 class="text-lg font-semibold text-amber-800">Producción Total (Hoy)</h3>
-                    <p id="kpi-produccion-hoy" class="text-4xl font-bold text-green-600">0</p>
-                    <span class="text-sm text-gray-500">(Suma de todas las Entradas de hoy, en sus unidades base)</span>
-                </div>
-                                <div class="bg-white p-6 rounded-lg shadow-md">
-                    <h3 class="text-lg font-semibold text-amber-800">Productos con Stock Bajo</h3>
-                    <p id="kpi-stock-bajo" class="text-4xl font-bold text-red-600">0</p>
-                    <span class="text-sm text-gray-500">(Productos bajo el límite de 20 unidades base)</span>
-                </div>
-            </div>
-            
-            <div class="bg-white p-4 sm:p-6 rounded-lg shadow-md">
-                <h2 class="text-2xl font-semibold mb-4 text-amber-900">Niveles de Stock (Unidades Base)</h2>
-                <div class="chart-container" style="position: relative; height: 50vh; max-height: 450px; width: 100%; max-width: 1000px; margin-left: auto; margin-right: auto;">
-                    <canvas id="stockChart"></canvas>
-                </div>
-            </div>
+        // --- FUNCIONES DE LÓGICA ---
 
-            <div class="bg-white p-4 sm:p-6 rounded-lg shadow-md">
-                <h2 class="text-2xl font-semibold mb-4 text-amber-900">Inventario Detallado</h2>
-                <input id="searchInput" type="text" placeholder="Buscar producto por nombre..." class="w-full p-3 border border-amber-300 rounded-md mb-4 focus:outline-none focus:ring-2 focus:ring-amber-500">
-                <div class="overflow-x-auto">
-                    <table class="w-full min-w-max">
-                        <thead class="bg-amber-100">
-                            <tr>
-                                <th class="p-3 text-left font-semibold text-amber-800">CÓDIGO</th>
-                                <th class="p-3 text-left font-semibold text-amber-800">Producto</th>
-                                <th class="p-3 text-left font-semibold text-amber-800">Unidad Base</th>
-                                <th class="p-3 text-left font-semibold text-amber-800">Stock (Base)</th>
-                                <th class="p-3 text-left font-semibold text-amber-800">Stock (Alterno)</th>
-                                <th class="p-3 text-left font-semibold text-amber-800">Formato Alterno</th>
-                            </tr>
-                        </thead>
-                        <tbody id="inventoryTableBody">
-              _             <tr><td colspan="6" class="p-4 text-center text-gray-500">Cargando datos...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </section>
-
-                <section id="view-registrar" class="view">
-            <p class="text-lg text-amber-800 mb-6 max-w-2xl mx-auto">
-                Utilice este formulario para registrar nuevas producciones (Entradas) o ventas/consumos (Salidas). Los datos se actualizarán en el panel de control automáticamente.
-            </p>
-            <form id="cargaForm" class="bg-white p-6 sm:p-8 rounded-lg shadow-md max-w-2xl mx-auto space-y-6">
-                <div>
-                    <label for="producto" class="block text-sm font-medium text-amber-800 mb-1">Producto</label>
-                    <select id="producto" name="producto" required class="w-full p-3 border border-amber-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-amber-500">
-                    </select>
-                </div>
-
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                    <div>
-                        <label for="tipo" class="block text-sm font-medium text-amber-800 mb-1">Tipo de Movimiento</label>
-                        <select id="tipo" name="tipo" required class="w-full p-3 border border-amber-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-amber-500">
-                            <option value="ENTRADA">ENTRADA (Producción)</option>
-                            <option value="SALIDA">SALIDA (Venta/Consumo)</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label for="formato" class="block text-sm font-medium text-amber-800 mb-1">Formato de Registro</label>
-                        <select id="formato" name="formato" required class="w-full p-3 border border-amber-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-amber-500">
-                        </select>
-                    </div>
-            _ </div>
-
-                <div>
-                    <label for="cantidad" class="block text-sm font-medium text-amber-800 mb-1">Cantidad</label>
-                    <input type="number" id="cantidad" name="cantidad" min="0.01" step="0.01" required class="w-full p-3 border border-amber-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500" placeholder="Ej: 2 (para latas) o 15 (para unidades/Kg)">
-                </div>
-
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                                        <div>
-                        <label for="operario" class="block text-sm font-medium text-amber-800 mb-1">Operario</label>
-                        <select id="operario" name="operario" required class="w-full p-3 border border-amber-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-amber-500">
-text                                             </select>
-                    </div>
-                    <div>
-                        <label for="fecha" class="block text-sm font-medium text-amber-800 mb-1">Fecha y Hora</label>
-                        <input type="datetime-local" id="fecha" name="fecha" required class="w-full p-3 border border-amber-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500">
-                    </div>
-                </div>
-
-                <div>
-                    <button type="submit" class="w-full bg-amber-600 text-white font-bold py-3 px-6 rounded-md hover:bg-amber-700 transition duration-300 text-lg">
-                        Registrar Movimiento
-                    </button>
-                </div>
-            </form>
-        </section>
-
-                <section id="view-historial" class="view space-y-6">
-            <p class="text-lg text-amber-800">
-                Registro cronológico de movimientos. **Por defecto se muestran solo los movimientos del día actual** para facilitar el traspaso de lote.
-            </p>
-            
-            <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center bg-white p-4 rounded-lg shadow-md">
-                <h2 class="text-xl font-semibold text-amber-900 mb-2 sm:mb-0">Filtro de Historial</h2>
-                <select id="historialFilter" class="p-2 border border-amber-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-amber-500">
-                    <option value="TODAY">Movimientos de Hoy</option>
-                    <option value="ALL">Todos los Movimientos</option>
-                </select>
-            </div>
-            
-            <div class="bg-white p-4 sm:p-6 rounded-lg shadow-md">
-                <div class="overflow-x-auto">
-                    <table class="w-full min-w-max">
-                        <thead class="bg-amber-100">
-                            <tr>
-                                <th class="p-3 text-left font-semibold text-amber-800">Fecha/Hora</th>
-                                <th class="p-3 text-left font-semibold text-amber-800">Producto</th>
-default                     <th class="p-3 text-left font-semibold text-amber-800">Tipo</th>
-                                <th class="p-3 text-left font-semibold text-amber-800">Registro</th>
-                                <th class="p-3 text-left font-semibold text-amber-800">Cant. Base</th>
-                                <th class="p-3 text-left font-semibold text-amber-800">Operario</th>
-                            </tr>
-                        </thead>
-                        <tbody id="historialTableBody">
-                            <tr>
-                                <td colspan="6" class="p-4 text-center text-gray-500">Cargando datos...</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </section>
-        
-                <section id="view-configuracion" class="view">
-            <h2 class="text-2xl font-semibold mb-4 text-amber-900">Configuración del Sistema</h2>
-          _ <p class="text-lg text-amber-800 mb-6 max-w-3xl">
-                Utilice esta sección para modificar las listas de productos y operarios autorizados. Los cambios se guardarán permanentemente en la base de datos y se aplicarán al instante.
-            </p>
-
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                
-                                <div class="bg-white p-6 sm:p-8 rounded-lg shadow-md space-y-4">
-                    <h3 class="text-xl font-semibold text-amber-800 mb-2">Administrar Operarios</h3>
-                    
-                    <label for="operarioConfigArea" class="block text-sm font-medium text-amber-800 mb-1">
-default                   Escriba **un nombre de operario por cada línea**:
-                    </label>
-                    <textarea id="operarioConfigArea" rows="8" class="w-full p-3 border border-amber-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono"></textarea>
-                    
-                    <button id="saveOperariosBtn" class="w-full bg-amber-600 text-white font-bold py-3 px-6 rounded-md hover:bg-amber-700 transition duration-300 text-lg">
-                        Guardar Operarios
-                    </button>
-                </div>
-
-                                <div class="bg-white p-6 sm:p-8 rounded-lg shadow-md space-y-4">
-                    <h3 class="text-xl font-semibold text-amber-800 mb-2">Administrar Productos y Conversiones</h3>
-                    
-                    <label for="productosConfigArea" class="block text-sm font-medium text-amber-800 mb-1">
-                        Edite la lista de productos. **Un producto por línea**, usando el separador '|' (tubería):
-                    </label>
-                    <p class="text-xs text-amber-700 font-mono mb-2">
-                        NOMBRE | UNIDAD BASE (Kg/Unidad) | FORMATO ALTERNO (Docena/Lata/-) | FACTOR CONV. | STOCK INICIAL
-A                 </p>
-                    <textarea id="productosConfigArea" rows="8" class="w-full p-3 border border-amber-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono text-xs"></textarea>
-                    
-                    <button id="saveProductosBtn" class="w-full bg-amber-600 text-white font-bold py-3 px-6 rounded-md hover:bg-amber-700 transition duration-300 text-lg">
-                        Guardar Productos
-            _     </button>
-                    <p class="text-xs text-red-500">¡ADVERTENCIA! Un formato de línea incorrecto (ej. omitir un campo) puede deshabilitar el sistema.</p>
-                </div>
-
-            </div>
-        </section>
-
-    </main>
-
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-
-            // VARIABLES DE ESTADO Y DATOS GLOBALES
-            let OPERARIOS_AUTORIZADOS = ["Seleccionar Operario"]; 
-            let dbProductos = []; // Esta variable será poblada por Firestore
-            
-            // Lista de productos por defecto (si la DB está vacía) en formato CSV-like
-            const defaultDbProductosCSV = `Media Luna Dulce | Unidad | Docena | 12 | 80
-Media Luna Salada | Unidad | Docena | 12 | 80
-Surtidas Dulces | Unidad | Bandeja | 6 | 60
-Surtidas Saladas | Unidad | Docena | 12 | 50
-Vigilantes | Unidad | Docena | 12 | 70
-Sacramento | Unidad | Docena | 12 | 40
-Palitos Dulces | Unidad | Media Docena | 6 | 30
-Palitos Salados | Unidad | Bolsa | 10 | 50
-Torta Negra | Unidad | - | 1 | 1
-Bolitas | Unidad | Caja | 15 | 90
-Rosquitas | Unidad | Bolsa | 20 | 100
-Pan de Castaña Rellenas | Kg | Unidad | 0.50 | 3
-Extra Cremonas | Kg | Unidad | 0.20 | 5
-Sacramentos Rellenos | Unidad | Docena | 12 | 40
-Bizcochos | Kg | Docena | 0.30 | 2
-Libritos | Kg | Docena | 0.30 | 4
-Libritos c/Semillas | Kg | Docena | 0.35 | 2
-Chipá | Kg | Unidad | 0.05 | 1
-Trenza | Unidad | - | 1 | 10
-Tarta Frutal | Porción | Tarta Entera | 8 | 16
-Panini | Kg | Unidad | 0.15 | 5
-Pan Francés | Kg | Unidad | 0.25 | 10
-Pan de Parrilla | Kg | Unidad | 0.40 | 3
-Torta Fritas | Unidad | Docena | 12 | 20
-Alfajor de Maicena | Unidad | Bandeja | 10 | 80`;
-
-            let dbMovimientos = [];
-            let stockChartInstance = null;
-            let currentUserId = null;
-            let isFirebaseReady = false;
-            
-            // Constantes de UI
-            const VISTAS = { panel: document.getElementById('view-panel'), registrar: document.getElementById('view-registrar'), historial: document.getElementById('view-historial'), configuracion: document.getElementById('view-configuracion') };
-            const NAVS = { panel: document.getElementById('nav-panel'), registrar: document.getElementById('nav-registrar'), historial: document.getElementById('nav-historial'), configuracion: document.getElementById('nav-configuracion') };
-            const productoSelect = document.getElementById('producto');
-            const formatoSelect = document.getElementById('formato');
-            const cargaForm = document.getElementById('cargaForm');
-            const inventoryTableBody = document.getElementById('inventoryTableBody');
-            const historialTableBody = document.getElementById('historialTableBody');
-            const searchInput = document.getElementById('searchInput');
-            const kpiTotalUnidades = document.getElementById('kpi-total-unidades');
-            const kpiStockBajo = document.getElementById('kpi-stock-bajo');
-            const kpiProduccionHoy = document.getElementById('kpi-produccion-hoy');
-text           const toastMessage = document.getElementById('toast-message');
-            const userIdDisplay = document.getElementById('user-id');
-            const operarioSelect = document.getElementById('operario');
-            const operarioConfigArea = document.getElementById('operarioConfigArea');
-            const saveOperariosBtn = document.getElementById('saveOperariosBtn');
-            const productosConfigArea = document.getElementById('productosConfigArea');
-  _         const saveProductosBtn = document.getElementById('saveProductosBtn');
-            const historialFilter = document.getElementById('historialFilter'); 
-            
-            // CORRECCIÓN 2: Unificar rutas de Firestore
-        // Usamos window.appId (exportado desde el script module) en todas las rutas.
-            const MOVIMIENTOS_COLLECTION_PATH = `/artifacts/${window.appId}/public/data/panaderia_movimientos`;
-            const CONFIG_OPERARIOS_DOC_PATH = `artifacts/${window.appId}/public/data/configuracion/operarios`;
-            const CONFIG_PRODUCTOS_DOC_PATH = `artifacts/${window.appId}/public/data/configuracion/productos`;
-
-        // CORRECCIÓN 3: Nueva función para obtener la fecha local (YYYY-MM-DD)
-        // Esto soluciona el bug de la zona horaria (UTC vs Local)
-        function getLocalISODate() {
-            const now = new Date();
-            const offset = now.getTimezoneOffset();
-            const localDate = new Date(now.getTime() - (offset * 60 * 1000));
-            return localDate.toISOString().split('T')[0];
+        async function cargarDatosIniciales() {
+            // Intentar cargar configuración de productos desde Firebase
+            try {
+                const docRef = doc(db, COLL_CONFIG, "productos_lista");
+                const docSnap = await getDoc(docRef);
+                
+                if (docSnap.exists()) {
+                    procesarProductosCSV(docSnap.data().csv);
+                } else {
+                    // Si no existe, usamos la lista por defecto
+                    procesarProductosCSV(PRODUCTOS_DEFAULT);
+                    // Y la guardamos para la próxima
+                    await setDoc(docRef, { csv: PRODUCTOS_DEFAULT });
+                }
+                llenarSelectProductos();
+            } catch (e) {
+                console.error("Error cargando config:", e);
+                // Fallback si falla la red
+                procesarProductosCSV(PRODUCTOS_DEFAULT);
+                llenarSelectProductos();
+            }
         }
 
-            function navegar(vista) {
-            // Este 'if' es el que "congela" las pestañas hasta que la DB se conecta.
-                if (!isFirebaseReady) {
-                console.log("Navegación bloqueada: Firebase no está listo.");
+        function procesarProductosCSV(csvText) {
+            productosGlobal = csvText.split('\n')
+                .map(line => line.trim())
+                .filter(line => line.length > 0)
+                .map((line, index) => {
+                    const parts = line.split('|').map(p => p.trim());
+                    return {
+                        id: 'prod_' + index,
+                        nombre: parts[0],
+                        unidad: parts[1] || 'Unidad',
+                        alterno: parts[2] || '-',
+                        factor: parseFloat(parts[3]) || 1,
+                        stockInicial: parseFloat(parts[4]) || 0
+                    };
+                });
+        }
+
+        function llenarSelectProductos() {
+            const sel = document.getElementById('producto');
+            sel.innerHTML = '<option value="" disabled selected>Seleccione producto...</option>';
+            productosGlobal.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.id;
+                opt.text = p.nombre;
+                sel.appendChild(opt);
+            });
+        }
+
+        // Escuchar cambios en tiempo real
+        function escucharMovimientos() {
+            const q = query(collection(db, COLL_MOVIMIENTOS), orderBy("timestamp", "desc"), limit(50));
+            
+            onSnapshot(q, (snapshot) => {
+                const movimientos = [];
+                snapshot.forEach((doc) => {
+                    movimientos.push({ id: doc.id, ...doc.data() });
+                });
+                actualizarTablaHistorial(movimientos);
+                actualizarStockVisual(movimientos);
+            });
+        }
+
+        // Funciones de Interfaz
+        window.cambiarVista = function(vistaId) {
+            document.querySelectorAll('.vista').forEach(v => v.classList.add('hidden'));
+            document.getElementById(vistaId).classList.remove('hidden');
+            
+            // Actualizar botones nav
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('bg-amber-700'));
+            const activeBtn = document.querySelector(`button[onclick="cambiarVista('${vistaId}')"]`);
+            if(activeBtn) activeBtn.classList.add('bg-amber-700');
+        }
+
+        window.actualizarFormato = function() {
+            const prodId = document.getElementById('producto').value;
+            const prod = productosGlobal.find(p => p.id === prodId);
+            const selFmt = document.getElementById('formato');
+            selFmt.innerHTML = '';
+            
+            if (prod) {
+                // Opción base
+                let opt1 = document.createElement('option');
+                opt1.value = 'base';
+                opt1.text = prod.unidad;
+                selFmt.appendChild(opt1);
+                
+                // Opción alterna si existe
+                if (prod.alterno !== '-' && prod.alterno !== '') {
+                    let opt2 = document.createElement('option');
+                    opt2.value = 'alterno';
+                    opt2.text = `${prod.alterno} (x${prod.factor})`;
+                    selFmt.appendChild(opt2);
+                }
+            }
+        }
+
+        window.guardarMovimiento = async function(e) {
+            e.preventDefault();
+            if (!currentUser) { alert("No estás conectado"); return; }
+
+            const btn = e.target.querySelector('button[type="submit"]');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Guardando...';
+
+            try {
+                const prodId = document.getElementById('producto').value;
+                const prod = productosGlobal.find(p => p.id === prodId);
+                const tipo = document.getElementById('tipo').value;
+                const formato = document.getElementById('formato').value;
+                let cantidad = parseFloat(document.getElementById('cantidad').value);
+                const operario = document.getElementById('operario').value;
+                const fechaInput = document.getElementById('fecha').value;
+
+                // Convertir a unidad base para cálculos
+                let cantidadBase = cantidad;
+                if (formato === 'alterno') {
+                    cantidadBase = cantidad * prod.factor;
+                }
+
+                // Guardar en Firebase
+                await addDoc(collection(db, COLL_MOVIMIENTOS), {
+                    productoId: prodId,
+                    productoNombre: prod.nombre,
+                    tipo: tipo, // ENTRADA o SALIDA
+                    cantidadOriginal: cantidad,
+                    formatoUsado: formato === 'base' ? prod.unidad : prod.alterno,
+                    cantidadBase: cantidadBase,
+                    operario: operario,
+                    fecha: fechaInput, // Fecha manual
+                    timestamp: new Date(), // Fecha sistema para orden
+                    usuario: currentUser.uid
+                });
+
+                alert("Movimiento registrado con éxito");
+                e.target.reset();
+                // Reset fecha a hoy
+                establecerFechaHoy();
+                
+            } catch (error) {
+                console.error(error);
+                alert("Error al guardar: " + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Registrar Movimiento';
+            }
+        }
+
+        function actualizarTablaHistorial(movs) {
+            const tbody = document.getElementById('tabla-body');
+            tbody.innerHTML = '';
+            
+            if (movs.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-500">No hay movimientos registrados</td></tr>';
                 return;
             }
 
-                Object.values(VISTAS).forEach(v => v.classList.remove('active-view'));
-                Object.values(NAVS).forEach(n => n.classList.remove('active-tab'));
-                
-                VISTAS[vista].classList.add('active-view');
-                NAVS[vista].classList.add('active-tab');
+            movs.forEach(m => {
+                const color = m.tipo === 'ENTRADA' ? 'text-green-600' : 'text-red-600';
+                const signo = m.tipo === 'ENTRADA' ? '+' : '-';
+                const row = `
+                    <tr class="border-b hover:bg-gray-50">
+                        <td class="p-3">${new Date(m.fecha).toLocaleDateString()}</td>
+                        <td class="p-3 font-medium">${m.productoNombre}</td>
+                        <td class="p-3"><span class="text-xs font-bold px-2 py-1 rounded ${m.tipo === 'ENTRADA' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">${m.tipo}</span></td>
+                        <td class="p-3 ${color} font-bold">${signo}${m.cantidadOriginal} ${m.formatoUsado}</td>
+                        <td class="p-3 text-gray-500 text-sm">${m.operario}</td>
+                    </tr>
+                `;
+                tbody.innerHTML += row;
+            });
+        }
 
-                if (vista === 'configuracion') {
-                    renderConfiguracion();
-                } else if (vista === 'historial') {
-                    renderHistorial(historialFilter.value); 
-                }
-            }
+        function actualizarStockVisual(movs) {
+            // Calculamos stock en memoria
+            const stockMap = {};
+            
+            // 1. Inicializar con stock base
+            productosGlobal.forEach(p => {
+                stockMap[p.id] = p.stockInicial;
+            });
 
-            function getProductoById(id) {
-                return dbProductos.find(p => p.id === id);
-            }
-text
-            function populateProductDropdown(selectIdToPreserve = null) {
-                productoSelect.innerHTML = '';
-                
-                if (dbProductos.length === 0) {
-                    const option = document.createElement('option');
-                    option.value = '';
-                    option.textContent = 'No hay productos configurados';
-                    option.disabled = true;
-                    productoSelect.appendChild(option);
-                    return;
-                }
+            // 2. Aplicar movimientos
+            // Recorremos en orden cronológico inverso (del más viejo al más nuevo) para calcular bien
+            // Pero como movs viene ordenado por 'desc', lo recorremos al revés
+            [...movs].reverse().forEach(m => {
+                if (!stockMap[m.productoId]) stockMap[m.productoId] = 0;
+                if (m.tipo === 'ENTRADA') {
+                    stockMap[m.productoId] += m.cantidadBase;
+                } else {
+                    stockMap[m.productoId] -= m.cantidadBase;
+                }
+            });
 
-                const idToSelect = selectIdToPreserve || (dbProductos[0] ? dbProductos[0].id : null);
+            // 3. Renderizar tarjetas
+            const grid = document.getElementById('grid-stock');
+            grid.innerHTML = '';
+            
+            productosGlobal.forEach(p => {
+                const stockActual = stockMap[p.id] || 0;
+                const esBajo = stockActual < 10; // Alerta si hay menos de 10
+                
+                const card = `
+                    <div class="bg-white p-4 rounded-lg shadow border-l-4 ${esBajo ? 'border-red-500' : 'border-green-500'}">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h3 class="font-bold text-gray-800 text-lg">${p.nombre}</h3>
+                                <p class="text-sm text-gray-500">Unidad: ${p.unidad}</p>
+                            </div>
+                            <div class="text-right">
+                                <span class="block text-2xl font-bold ${esBajo ? 'text-red-600' : 'text-gray-800'}">${stockActual.toFixed(1)}</span>
+                                ${p.alterno !== '-' ? `<span class="text-xs text-gray-400">aprox ${(stockActual/p.factor).toFixed(1)} ${p.alterno}</span>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+                grid.innerHTML += card;
+            });
+        }
 
-                dbProductos.forEach(p => {
-                    const option = document.createElement('option');
-                    option.value = p.id;
-                    option.textContent = p.nombre;
-                    
-                    if (p.id === idToSelect) {
-                         option.selected = true;
-                    }
-                    productoSelect.appendChild(option);
-                });
-                
-                if (productoSelect.value) {
-                updateFormatDropdown(productoSelect.value);
-            }
-            }
-            
-            function updateFormatDropdown(selectedProductId) {
-                const producto = getProductoById(selectedProductId);
-                
-                formatoSelect.innerHTML = ''; 
-                
-                if (producto) {
-                    const optUnidad = document.createElement('option');
-                    optUnidad.value = producto.unidadBase;
-                    optUnidad.textContent = producto.unidadBase;
-                    formatoSelect.appendChild(optUnidad);
+        function establecerFechaHoy() {
+            const now = new Date();
+            // Ajuste para zona horaria local
+            now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+            document.getElementById('fecha').value = now.toISOString().slice(0,16);
+        }
 
-                    if (producto.formatoAlterno !== '-' && producto.factorConv !== 1) {
-                        const optAlterno = document.createElement('option');
-                        optAlterno.value = producto.formatoAlterno;
-                        optAlterno.textContent = producto.formatoAlterno;
-                        formatoSelect.appendChild(optAlterno);
-                    }
-                }
-            }
+        // Datos por defecto (Backup)
+        const PRODUCTOS_DEFAULT = `
+Media Luna Dulce | Unidad | Docena | 12 | 100
+Media Luna Salada | Unidad | Docena | 12 | 100
+Pan Frances | Kg | Bolsa | 20 | 50
+Bizcochos | Kg | - | 1 | 20
+Tortitas Negras | Unidad | Docena | 12 | 60
+Vigilantes | Unidad | Docena | 12 | 60
+Cañoncitos | Unidad | Bandeja | 6 | 40
+`;
 
-            function calcularStock() {
-                const stockCalculado = new Map();
+        // Inicialización al cargar DOM
+        window.addEventListener('DOMContentLoaded', () => {
+            establecerFechaHoy();
+        });
 
-                dbProductos.forEach(p => {
-                    stockCalculado.set(p.id, {
-                        ...p,
-                        stockActual: p.stockInicial
-text               });
-                });
+    </script>
+</head>
+<body class="bg-gray-100 text-gray-800 font-sans h-screen flex flex-col overflow-hidden">
 
-                dbMovimientos.forEach(mov => {
-                    const prod = stockCalculado.get(mov.productoId);
-                    if (!prod) return; 
-                    if (mov.tipo === 'ENTRADA') {
-                        prod.stockActual += mov.cantidadBase;
-                    } else {
-                        prod.stockActual -= mov.cantidadBase;
-                    }
-                });
-                
-                return Array.from(stockCalculado.values());
-            }
+    <header class="bg-amber-600 text-white shadow-md z-10 flex-none">
+        <div class="container mx-auto px-4 py-3 flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <i class="fas fa-bread-slice text-2xl"></i>
+                <h1 class="text-xl font-bold tracking-wide">Control Panadería</h1>
+            </div>
+            <div id="status-con" class="text-sm bg-white/20 px-3 py-1 rounded-full backdrop-blur-sm">
+                Conectando...
+            </div>
+        </div>
+    </header>
 
-            function renderPanel() {
-                const stockActualizado = calcularStock();
-                inventoryTableBody.innerHTML = '';
-                let totalUnidadesGlobal = 0;
-                let totalStockBajo = 0;
-                
-                const searchTerm = searchInput.value.toLowerCase();
+    <nav class="bg-amber-800 text-amber-100 flex-none">
+        <div class="container mx-auto flex">
+            <button onclick="cambiarVista('vista-panel')" class="nav-btn flex-1 py-3 text-center hover:bg-amber-700 transition font-medium bg-amber-700 border-b-4 border-amber-500">
+                <i class="fas fa-th-large mr-2"></i>Stock Actual
+            </button>
+            <button onclick="cambiarVista('vista-carga')" class="nav-btn flex-1 py-3 text-center hover:bg-amber-700 transition font-medium">
+                <i class="fas fa-plus-circle mr-2"></i>Registrar
+            </button>
+            <button onclick="cambiarVista('vista-historial')" class="nav-btn flex-1 py-3 text-center hover:bg-amber-700 transition font-medium">
+                <i class="fas fa-history mr-2"></i>Historial
+            </button>
+        </div>
+    </nav>
 
-            // CORRECCIÓN 3 (Aplicación 1): Usar la fecha local para el KPI
-                const todayISO = getLocalISODate(); // <-- CÓDIGO CORREGIDO
+    <main class="flex-1 overflow-y-auto p-4 md:p-6">
+        
+        <div id="vista-panel" class="vista container mx-auto max-w-5xl">
+            <h2 class="text-2xl font-bold text-gray-700 mb-6 border-b pb-2">Estado del Stock</h2>
+            <div id="grid-stock" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div class="col-span-full text-center py-10 text-gray-400">
+                    <i class="fas fa-circle-notch fa-spin text-3xl mb-3"></i>
+                    <p>Cargando datos del inventario...</p>
+                </div>
+            </div>
+        </div>
 
-                let totalProduccionHoy = 0;
+        <div id="vista-carga" class="vista hidden container mx-auto max-w-xl">
+            <div class="bg-white rounded-xl shadow-lg p-6">
+                <h2 class="text-2xl font-bold text-gray-700 mb-6 text-center">Nuevo Movimiento</h2>
+                
+                <form onsubmit="guardarMovimiento(event)" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Producto</label>
+                        <select id="producto" onchange="actualizarFormato()" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none bg-gray-50">
+                            <option>Cargando lista...</option>
+                        </select>
+                    </div>
 
-                stockActualizado.filter(p => p.nombre.toLowerCase().includes(searchTerm))
-                .forEach(p => {
-                    const stockBase = p.stockActual;
-                    const stockAlterno = p.factorConv > 0 ? stockBase / p.factorConv : 0;
-                    totalUnidadesGlobal += stockBase;
-                    
-                    if (stockBase < 20) {
-                        totalStockBajo++;
-                    }
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Acción</label>
+                            <select id="tipo" required class="w-full p-3 border border-gray-300 rounded-lg bg-white">
+                                <option value="ENTRADA">Producción (Entrada)</option>
+                                <option value="SALIDA">Venta/Salida</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Unidad Medida</label>
+                            <select id="formato" required class="w-full p-3 border border-gray-300 rounded-lg bg-white">
+                                <option value="base">Unidad Base</option>
+                            </select>
+                        </div>
+                    </div>
 
-                    const tr = document.createElement('tr');
-test               tr.className = `border-b border-amber-100 ${stockBase < 20 ? 'bg-red-50' : ''}`;
-                    tr.innerHTML = `
-                        <td class="p-3">${p.id}</td>
-                        <td class="p-3 font-medium">${p.nombre}</td>
-                        <td class="p-3">${p.unidadBase}</td>
-                        <td class="p-3 font-bold ${stockBase < 20 ? 'text-red-600' : ''}">${stockBase.toLocaleString('es-ES', { maximumFractionDigits: 2 })}</td>
-                        <td class="p-3">${stockAlterno.toLocaleString('es-ES', { maximumFractionDigits: 2 })}</td>
-                        <td class="p-3 text-sm text-gray-600">${p.formatoAlterno !== '-' ? p.formatoAlterno : p.unidadBase}</td>
-                    `;
-                    inventoryTableBody.appendChild(tr);
-                });
-                
-                // Sumar entradas de hoy
-A               dbMovimientos.forEach(mov => {
-                    const movDate = mov.fecha.split('T')[0]; 
-                    if (mov.tipo === 'ENTRADA' && movDate === todayISO) {
-                        totalProduccionHoy += mov.cantidadBase;
-                    }
-                });
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Cantidad</label>
+                        <input type="number" id="cantidad" step="0.01" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 text-lg font-bold text-center">
+                    </div>
 
-                kpiTotalUnidades.textContent = Math.round(totalUnidadesGlobal).toLocaleString('es-ES');
-                kpiStockBajo.textContent = totalStockBajo;
-                kpiProduccionHoy.textContent = totalProduccionHoy.toLocaleString('es-ES', { maximumFractionDigits: 2 });
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Responsable</label>
+                            <select id="operario" required class="w-full p-3 border border-gray-300 rounded-lg bg-white">
+                                <option>Mañana</option>
+                                <option>Tarde</option>
+                                <option>Noche</option>
+                                <option>Mostrador</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Fecha/Hora</label>
+                            <input type="datetime-local" id="fecha" required class="w-full p-3 border border-gray-300 rounded-lg text-sm">
+                        </div>
+                    </div>
 
-                renderChart(stockActualizado);
-            }
-            
-            function renderChart(data) {
-                const ctx = document.getElementById('stockChart').getContext('2d');
-                
-                const labels = data.map(p => `${p.nombre} (${p.unidadBase})`);
-                const stockData = data.map(p => p.stockActual);
-                
-                const backgroundColors = data.map(p => p.stockActual < 20 ? 'rgba(239, 68, 68, 0.6)' : 'rgba(217, 119, 6, 0.6)');
-                const borderColors = data.map(p => p.stockActual < 20 ? 'rgba(239, 68, 68, 1)' : 'rgba(217, 119, 6, 1)');
+                    <button type="submit" class="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-4 rounded-lg shadow-md transition transform active:scale-95 mt-4">
+                        Registrar Movimiento
+                    </button>
+                </form>
+            </div>
+        </div>
 
-                if (stockChartInstance) {
-                    stockChartInstance.destroy();
-_             }
+        <div id="vista-historial" class="vista hidden container mx-auto max-w-4xl">
+            <h2 class="text-2xl font-bold text-gray-700 mb-6 border-b pb-2">Últimos Movimientos</h2>
+            <div class="bg-white rounded-lg shadow overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full whitespace-nowrap">
+                        <thead class="bg-gray-100 text-gray-600 text-left text-sm uppercase">
+                            <tr>
+                                <th class="p-3">Fecha</th>
+                                <th class="p-3">Producto</th>
+                                <th class="p-3">Tipo</th>
+                                <th class="p-3">Cantidad</th>
+                                <th class="p-3">Resp.</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabla-body" class="divide-y divide-gray-200 text-sm text-gray-700">
+                            </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
 
-                stockChartInstance = new Chart(ctx, {
-                    type: 'bar',
-                    data: {
-body                   labels: labels,
-                        datasets: [{
-                            label: 'Stock Actual (Unidades Base)',
-                            data: stockData,
-                            backgroundColor: backgroundColors,
-                  _       borderColor: borderColors,
-                            borderWidth: 1
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        indexAxis: 'y',
-                        scales: {
-                            x: {
-                                beginAtZero: true
-                          _ },
-                            y: {
-                                ticks: {
-                                    autoSkip: false,
-                                    font: {
-                                        size: 10
-                                    }
-                                }
-                            }
-                        },
-                        plugins: {
-                            legend: {
-                                display: false
-                            }
-                        }
-                    }
-                });
-            }
+    </main>
 
-            function renderHistorial(filterMode = 'TODAY') {
-                historialTableBody.innerHTML = '';
-                
-                let movimientosFiltrados = [...dbMovimientos].sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
-                
-                if (filterMode === 'TODAY') {
-                // CORRECCIÓN 3 (Aplicación 2): Usar la fecha local para el filtro de historial
-          _         const today = getLocalISODate(); // <-- CÓDIGO CORREGIDO
-                    movimientosFiltrados = movimientosFiltrados.filter(mov => mov.fecha.split('T')[0] === today);
-                }
-
-                if (movimientosFiltrados.length === 0) {
-                    const message = filterMode === 'TODAY' ? 'No hay movimientos registrados para el día de hoy.' : 'No hay movimientos registrados.';
-                    historialTableBody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500">${message}</td></tr>`;
-                    return;
-                }
-
-                movimientosFiltrados.forEach(mov => {
-                    const producto = getProductoById(mov.productoId);
-                    if (!producto) return; 
-
-                    const tr = document.createElement('tr');
-                    tr.className = 'border-b border-amber-100';
-                    tr.innerHTML = `
-                        <td class="p-3 text-sm">${new Date(mov.fecha).toLocaleString('es-ES')}</td>
-                        <td class="p-3 font-medium">${producto.nombre}</td>
-                        <td class="p-3">
-                            <span class="px-2 py-1 text-xs font-semibold rounded-full ${mov.tipo === 'ENTRADA' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
-                                ${mov.tipo}
-                            </span>
-                        </td>
-                        <td class="p-3 text-sm">${mov.cantidad.toLocaleString('es-ES')} ${mov.formato}</td>
-                        <td class="p-3 font-bold">${mov.tipo === 'ENTRADA' ? '+' : '-'}${mov.cantidadBase.toLocaleString('es-ES', { maximumFractionDigits: 2 })} ${producto.unidadBase}</td>
-                        <td class="p-3 text-sm text-gray-600">${mov.operario || '-'}</td>
-                    `;
-                    historialTableBody.appendChild(tr);
-                });
-            }
-
-            async function registrarMovimiento(e) {
-                e.preventDefault();
-                
-                const formData = new FormData(cargaForm);
-                const productoId = formData.get('producto');
-                const tipo = formData.get('tipo');
-                const formato = formData.get('formato');
-                const cantidad = parseFloat(formData.get('cantidad'));
-                const operario = formData.get('operario');
-                const fecha = formData.get('fecha');
-
-                if (!currentUserId) {
-                    showToast('Error: Usuario no autenticado.');
-                    return;
-                }
-
-                if (operario === OPERARIOS_AUTORIZADOS[0]) { 
-                    showToast('Error: Por favor, seleccione un operario válido.');
-                    return;
-                }
-                
-                if (cantidad <= 0 || isNaN(cantidad)) {
-text                  showToast('Error: La cantidad debe ser un número positivo.');
-                     return;
-                }
-
-                const producto = getProductoById(productoId);
-                if (!producto) {
-                    showToast('Error: Producto no encontrado en la configuración.');
-                    return;
-                }
-
-          _   let cantidadBase = cantidad;
-
-                // Si el formato registrado es el FORMATO ALTERNO, usamos el FACTOR DE CONVERSION.
-text               if (formato === producto.formatoAlterno && producto.formatoAlterno !== '-' && producto.factorConv !== 1) {
-                    cantidadBase = cantidad * producto.factorConv;
-                }
-                
-                // Si el formato registrado es la UNIDAD BASE (Kg, Unidad, Porción), la cantidad base es la cantidad.
-                
-                const nuevoMovimiento = {
-                    fecha: fecha, // Almacenar como string ISO para Firestore
-                    productoId,
-                    tipo,
-node                 formato,
-                    cantidad,
-                    cantidadBase,
+</body>
+</html>
