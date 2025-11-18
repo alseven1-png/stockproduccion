@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Control Panadería - v7.0</title>
+    <title>Control Panadería - v8.0 Final</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -16,9 +16,9 @@
     <script>
         // ============================================================
         // 1. CONFIGURACIÓN DE SEGURIDAD
-        // Cambia "1234" por tu contraseña privada de administrador
         // ============================================================
-        const CLAVE_ADMIN = "2550LP"; 
+        const CLAVE_ADMIN = "50256LP"; 
+        
 
         const firebaseConfig = {
   apiKey: "AIzaSyBKV1mVfhFZJgeZRu6FHgz-2_KVrKDlHoc",
@@ -28,9 +28,7 @@
   messagingSenderId: "230493635490",
   appId: "1:230493635490:web:f4b780864dbc64eebda8fb"
 };
-
-        
-        // ============================================================
+      
 
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
@@ -47,7 +45,7 @@
 
         // --- INICIALIZACIÓN ---
         document.addEventListener('DOMContentLoaded', () => {
-            auth.signInAnonymously().catch(e => alert("Error conexión: " + e.message));
+            auth.signInAnonymously().catch(e => console.error("Error conexión: ", e));
             auth.onAuthStateChanged((user) => {
                 if (user) {
                     currentUser = user;
@@ -63,7 +61,7 @@
             escucharMovimientos();
         }
 
-        // --- GESTIÓN DE CONFIGURACIÓN ---
+        // --- CONFIGURACIÓN ---
         
         const PRODUCTOS_DEFAULT = `Media Luna Dulce | Unidad | Lata | 12 | 0
 Media Luna Salada | Unidad | Lata | 12 | 0
@@ -72,35 +70,19 @@ Surtidas Saladas | Unidad | Docena | 12 | 0
 Vigilantes | Unidad | Docena | 12 | 0
 Sacramento | Unidad | Docena | 12 | 0
 Palitos Dulces | Unidad | Media Docena | 6 | 0
-Palitos Salados | Unidad | Bolsa | 10 | 0
-Torta Negra | Unidad | - | 1 | 0
-Bolitas | Unidad | Caja | 15 | 0
-Rosquitas | Unidad | Bolsa | 20 | 0
-Pan de Castaña Rellenas | Kg | Unidad | 0.50 | 0
-Extra Cremonas | Kg | Unidad | 0.20 | 0
-Sacramentos Rellenos | Unidad | Docena | 12 | 0
-Bizcochos | Kg | Docena | 0.30 | 0
-Libritos | Kg | Docena | 0.30 | 0
-Libritos c/Semillas | Kg | Docena | 0.35 | 0
-Chipá | Kg | Unidad | 0.05 | 0
-Trenza | Unidad | - | 1 | 0
-Tarta Frutal | Porción | Tarta Entera | 8 | 0
-Panini | Kg | Unidad | 0.15 | 0
-Pan Francés | Kg | Unidad | 0.25 | 0
-Pan de Parrilla | Kg | Unidad | 0.40 | 0
-Torta Fritas | Unidad | Docena | 12 | 0
-Alfajor de Maicena | Unidad | Bandeja | 10 | 0`;
+Pan Francés | Kg | Bolsa | 20 | 0`;
 
         const OPERARIOS_DEFAULT = "Mañana\nTarde\nNoche";
 
         async function cargarConfiguracionGeneral() {
-            try {
+             // Lógica para cargar productos y operarios (omitted for brevity, assume the previous v7 logic is here)
+             // ...
+             try {
                 // Cargar Productos
                 const docProd = await db.collection(COLL_CONFIG).doc("productos_lista").get();
                 let csvProd = PRODUCTOS_DEFAULT;
                 if (docProd.exists) csvProd = docProd.data().csv;
                 else await db.collection(COLL_CONFIG).doc("productos_lista").set({ csv: PRODUCTOS_DEFAULT });
-                
                 document.getElementById('config-productos').value = csvProd;
                 procesarProductosCSV(csvProd);
 
@@ -124,12 +106,7 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 0`;
             productosGlobal = csvText.split('\n').map(l => l.trim()).filter(l => l.length > 0).map((l, i) => {
                 const p = l.split('|').map(s => s.trim());
                 return { 
-                    id: 'prod_' + i, 
-                    nombre: p[0], 
-                    unidad: p[1] || 'Unidad', 
-                    alterno: p[2] || '-', 
-                    factor: parseFloat(p[3]) || 1, 
-                    stockInicial: parseFloat(p[4]) || 0 
+                    id: 'prod_' + i, nombre: p[0], unidad: p[1] || 'Unidad', alterno: p[2] || '-', factor: parseFloat(p[3]) || 1, stockInicial: parseFloat(p[4]) || 0 
                 };
             });
             llenarSelectProductos();
@@ -139,9 +116,9 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 0`;
             operariosGlobal = txt.split('\n').map(s => s.trim()).filter(s => s.length > 0);
             llenarSelectOperarios();
         }
-
+        
         function llenarSelectProductos() {
-            const sel = document.getElementById('producto');
+             const sel = document.getElementById('producto');
             const actual = sel.value;
             sel.innerHTML = '<option value="" disabled selected>Seleccione producto...</option>';
             productosGlobal.forEach(p => {
@@ -162,22 +139,19 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 0`;
             if(actual) sel.value = actual;
         }
 
+
         // --- NÚCLEO: CÁLCULOS ---
 
         function escucharMovimientos() {
-            db.collection(COLL_MOVIMIENTOS).orderBy("timestamp", "desc")
-                .onSnapshot((snapshot) => {
-                    movimientosGlobal = [];
-                    snapshot.forEach((doc) => movimientosGlobal.push({ id: doc.id, ...doc.data() }));
-                    
-                    actualizarPanelPrincipal();
-                    actualizarHistorialVisual(); 
-                });
+            db.collection(COLL_MOVIMIENTOS).orderBy("timestamp", "desc").onSnapshot((snapshot) => {
+                movimientosGlobal = [];
+                snapshot.forEach((doc) => movimientosGlobal.push({ id: doc.id, ...doc.data() }));
+                actualizarPanelPrincipal();
+                actualizarHistorialVisual(); 
+            });
         }
         
-        function esEntrada(tipo) {
-            return tipo === 'ENTRADA' || tipo === 'SOBRANTE';
-        }
+        function esEntrada(tipo) { return tipo === 'ENTRADA' || tipo === 'SOBRANTE'; }
 
         function obtenerFechaLocal() {
             const now = new Date();
@@ -193,53 +167,65 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 0`;
         function actualizarPanelPrincipal() {
             const stockMap = {};
             productosGlobal.forEach(p => stockMap[p.id] = p.stockInicial);
-            const produccionHoyMap = {}; 
-            const produccionHistoricaMap = {};
+            
+            // Mapas para la reconciliación diaria
+            const produccionDiariaMap = {}; 
+            const sobranteDiarioMap = {};
+            const produccionHistoricaMap = {}; // Para el gráfico
 
             [...movimientosGlobal].reverse().forEach(m => {
-                // Stock General (Histórico + Hoy)
-                const isPositive = esEntrada(m.tipo);
-                
-                if (isPositive) stockMap[m.productoId] += m.cantidadBase;
-                else stockMap[m.productoId] -= m.cantidadBase;
+                // Stock General (siempre positivo/negativo)
+                if (m.tipo !== 'SALIDA') stockMap[m.productoId] += m.cantidadBase;
+                else stockMap[m.productoId] -= Math.abs(m.cantidadBase); // Usa abs para evitar doble negativo
 
-                // Producción Diaria (para el mostrador - solo ENTRADA/SOBRANTE de HOY)
-                if (isPositive && esHoy(m.fecha)) {
-                    if (!produccionHoyMap[m.productoId]) produccionHoyMap[m.productoId] = 0;
-                    produccionHoyMap[m.productoId] += m.cantidadBase;
+                // Reconciliación Diaria (solo ENTRADA y SOBRANTE de hoy)
+                if (esHoy(m.fecha)) {
+                    if (m.tipo === 'ENTRADA') {
+                        if (!produccionDiariaMap[m.productoId]) produccionDiariaMap[m.productoId] = 0;
+                        produccionDiariaMap[m.productoId] += Math.abs(m.cantidadBase);
+                    } else if (m.tipo === 'SOBRANTE') {
+                         if (!sobranteDiarioMap[m.productoId]) sobranteDiarioMap[m.productoId] = 0;
+                         sobranteDiarioMap[m.productoId] += Math.abs(m.cantidadBase);
+                    }
                 }
                 
                 // Producción Histórica (para el gráfico - solo ENTRADA/SOBRANTE)
-                 if (isPositive) {
+                 if (m.tipo !== 'SALIDA') {
                     if (!produccionHistoricaMap[m.productoNombre]) produccionHistoricaMap[m.productoNombre] = 0;
-                    produccionHistoricaMap[m.productoNombre] += m.cantidadBase;
+                    produccionHistoricaMap[m.productoNombre] += Math.abs(m.cantidadBase);
                 }
             });
 
-            // 1. Renderizar Tabla "Resumen del Día"
+            // 1. Renderizar Tabla "Resumen del Día" con Reconciliación
             const tbodyHoy = document.getElementById('tabla-produccion-hoy');
             tbodyHoy.innerHTML = '';
             let hayDatosHoy = false;
             
             productosGlobal.forEach(p => {
-                const cant = produccionHoyMap[p.id] || 0;
-                if (cant > 0) {
+                const prod = produccionDiariaMap[p.id] || 0;
+                const sob = sobranteDiarioMap[p.id] || 0;
+                
+                if (prod > 0 || sob > 0) {
                     hayDatosHoy = true;
+                    const ventaCalculada = (prod - sob) >= 0 ? (prod - sob) : 0;
+                    const colorVenta = ventaCalculada > 0 ? 'text-blue-700' : 'text-gray-500';
+
                     tbodyHoy.innerHTML += `
                         <tr class="border-b border-green-100">
-                            <td class="py-2 font-medium text-gray-800 pl-2">${p.nombre}</td>
-                            <td class="py-2 text-right font-bold text-green-700 pr-2 text-lg">${cant.toFixed(2)}</td>
-                            <td class="py-2 text-right text-xs text-gray-500 pr-2">${p.unidad}</td>
+                            <td class="py-2 font-medium text-gray-800 pl-4">${p.nombre}</td>
+                            <td class="py-2 text-center text-green-700">${prod.toFixed(1)} ${p.unidad}</td>
+                            <td class="py-2 text-center text-amber-700">${sob.toFixed(1)} ${p.unidad}</td>
+                            <td class="py-2 text-center font-bold ${colorVenta}">${ventaCalculada.toFixed(1)} ${p.unidad}</td>
                         </tr>
                     `;
                 }
             });
             
             if (!hayDatosHoy) {
-                tbodyHoy.innerHTML = '<tr><td colspan="3" class="text-center py-6 text-gray-400 italic">Sin producción registrada hoy</td></tr>';
+                tbodyHoy.innerHTML = '<tr><td colspan="4" class="text-center py-6 text-gray-400 italic">Sin movimientos de Producción/Sobrante registrados hoy</td></tr>';
             }
 
-            // 2. Renderizar Tarjetas de Stock General
+            // 2. Renderizar Tarjetas de Stock General (Depósito)
             const grid = document.getElementById('grid-stock');
             grid.innerHTML = '';
             let alertaStock = 0;
@@ -249,7 +235,7 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 0`;
                 if (actual < 10) alertaStock++;
                 
                 grid.innerHTML += `
-                    <div class="bg-white p-3 rounded shadow border-l-4 ${actual < 10 ? 'border-red-500' : 'border-amber-500'} flex justify-between items-center">
+                    <div class="bg-white p-3 rounded shadow border-l-4 ${actual < 10 ? 'border-red-500' : 'border-amber-500'} flex justify-between items-center transition duration-300 hover:shadow-lg">
                         <div class="overflow-hidden">
                             <h3 class="font-bold text-gray-700 truncate text-sm">${p.nombre}</h3>
                             <p class="text-xs text-gray-400">Total Depósito</p>
@@ -325,9 +311,6 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 0`;
                 formatoTexto = prod.alterno; 
             }
             
-            // El tipo se guarda tal cual (ENTRADA, SALIDA, SOBRANTE)
-            let tipoGuardar = tipo; 
-            
             // Si es SALIDA, la cantidad base debe ser negativa para el cálculo de stock
             let cantBaseCalculo = cantBase;
             if (tipo === 'SALIDA') {
@@ -336,7 +319,7 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 0`;
 
             db.collection(COLL_MOVIMIENTOS).add({
                 productoId: prodId, productoNombre: prod.nombre,
-                tipo: tipoGuardar, cantidadOriginal: cantidad, formatoUsado: formatoTexto,
+                tipo: tipo, cantidadOriginal: cantidad, formatoUsado: formatoTexto,
                 cantidadBase: cantBaseCalculo, operario: operario, fecha: fecha,
                 timestamp: new Date().toISOString()
             }).then(() => {
@@ -444,7 +427,7 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 0`;
 
         function getColorClase(tipo) {
             if (tipo === 'ENTRADA') return 'text-green-600';
-            if (tipo === 'SOBRANTE') return 'text-blue-600'; // Nuevo color para Sobrante
+            if (tipo === 'SOBRANTE') return 'text-blue-600'; 
             return 'text-red-600';
         }
 
@@ -479,7 +462,7 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 0`;
                         <td class="p-2 text-gray-500 text-xs">${dia} ${hora}</td>
                         <td class="p-2 font-medium">${m.productoNombre}</td>
                         <td class="p-2 text-center text-xs font-bold"><span class="bg-gray-200 px-1 rounded-full text-gray-600">${abrev}</span></td>
-                        <td class="p-2 text-right font-bold ${color}">${getSigno(m.tipo)}${m.cantidadOriginal} ${m.formatoUsado}</td>
+                        <td class="p-2 text-right font-bold ${color}">${getSigno(m.tipo)}${Math.abs(m.cantidadOriginal)} ${m.formatoUsado}</td>
                          <td class="p-2 text-right text-xs text-gray-500">${m.operario}</td>
                     </tr>`;
                 });
@@ -499,7 +482,7 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 0`;
                          const color = getColorClase(m.tipo);
                          itemsHtml += `<div class="flex justify-between text-xs border-b border-gray-100 py-1">
                             <span class="text-gray-500">${m.fecha.slice(8,10)}/${m.fecha.slice(5,7)} ${m.fecha.slice(11,16)} - ${m.operario}</span>
-                            <span class="font-bold ${color}">${getSigno(m.tipo)}${m.cantidadOriginal} ${m.formatoUsado} (${getAbrev(m.tipo)})</span>
+                            <span class="font-bold ${color}">${getSigno(m.tipo)}${Math.abs(m.cantidadOriginal)} ${m.formatoUsado} (${getAbrev(m.tipo)})</span>
                          </div>`;
                     });
 
@@ -566,24 +549,29 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 0`;
             <div class="bg-white rounded-lg shadow-md border-t-4 border-green-500 overflow-hidden">
                 <div class="bg-green-50 px-4 py-3 border-b border-green-100 flex justify-between items-center">
                     <div>
-                        <h2 class="font-bold text-green-900 text-lg">Producción de HOY</h2>
-                        <p class="text-xs text-green-700">Datos para cargar en facturación</p>
+                        <h2 class="font-bold text-green-900 text-lg">Reconciliación Diaria</h2>
+                        <p class="text-xs text-green-700">Diferencia a validar con el sistema de facturación</p>
                     </div>
-                    <i class="fas fa-calendar-day text-green-300 text-2xl"></i>
+                    <i class="fas fa-calculator text-green-300 text-2xl"></i>
                 </div>
-                <div class="p-0">
+                <div class="p-0 overflow-x-auto">
                     <table class="w-full text-sm">
                         <thead class="bg-gray-50 text-xs text-gray-500 uppercase">
-                            <tr><th class="text-left py-2 pl-4">Producto</th><th class="text-right py-2 pr-4">Cantidad</th><th class="text-right py-2 pr-4">Ud.</th></tr>
+                            <tr>
+                                <th class="text-left py-2 pl-4">Producto</th>
+                                <th class="text-center py-2">Prod. (A)</th>
+                                <th class="text-center py-2">Sob. (B)</th>
+                                <th class="text-center py-2 font-bold text-blue-700">Venta Esp. (A-B)</th>
+                            </tr>
                         </thead>
                         <tbody id="tabla-produccion-hoy" class="divide-y divide-gray-100">
-                            <tr><td colspan="3" class="text-center py-4 text-gray-400">Cargando...</td></tr>
+                            <tr><td colspan="4" class="text-center py-4 text-gray-400">Cargando...</td></tr>
                         </tbody>
                     </table>
                 </div>
             </div>
             
-            <div class="bg-white p-3 rounded-lg shadow h-64">
+            <div class="bg-white p-3 rounded-lg shadow h-64 border border-gray-100">
                 <h3 class="font-bold text-gray-700 mb-1 text-sm">Distribución Histórica (Producción/Sobrante)</h3>
                 <div class="h-56 relative">
                     <canvas id="graficoProduccion"></canvas>
@@ -648,7 +636,7 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 0`;
 
         <div id="vista-historial" class="vista hidden container mx-auto max-w-4xl">
             <div class="flex justify-end mb-2">
-                <button id="btn-toggle-historial" onclick="toggleModoHistorial()" class="bg-white border border-gray-300 text-gray-600 px-3 py-1 rounded text-xs font-bold shadow-sm">
+                <button id="btn-toggle-historial" onclick="toggleModoHistorial()" class="bg-white border border-gray-300 text-gray-600 px-3 py-1 rounded text-xs font-bold shadow-sm hover:bg-gray-50">
                     <i class="fas fa-layer-group mr-1"></i> Agrupar por Producto
                 </button>
             </div>
@@ -674,7 +662,7 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 0`;
                 <textarea id="config-productos" class="w-full border p-2 text-xs font-mono h-40 rounded bg-gray-50"></textarea>
             </div>
 
-            <button onclick="guardarConfiguracion()" class="w-full bg-blue-600 text-white py-3 rounded font-bold text-sm shadow">
+            <button onclick="guardarConfiguracion()" class="w-full bg-blue-600 text-white py-3 rounded font-bold text-sm shadow hover:bg-blue-700">
                 <i class="fas fa-save mr-2"></i>GUARDAR TODOS LOS CAMBIOS
             </button>
 
