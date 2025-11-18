@@ -3,22 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Control de Mercadería - Panadería</title>
+    <title>Control de Producción Panadería</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 
     <script type="module">
-        // 1. Importamos las funciones necesarias
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, addDoc, getDocs, query, orderBy, limit, onSnapshot, doc, setDoc, getDoc, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, query, orderBy, limit, onSnapshot, doc, setDoc, getDoc, deleteDoc, getDocs, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-// Import the functions you need from the SDKs you need
-
-
-// https://firebase.google.com/docs/web/setup#available-libraries
-
-// Your web app's Firebase configuration
 const firebaseConfig = {
   apiKey: "AIzaSyBKV1mVfhFZJgeZRu6FHgz-2_KVrKDlHoc",
   authDomain: "mercaderia-f1699.firebaseapp.com",
@@ -27,415 +20,528 @@ const firebaseConfig = {
   messagingSenderId: "230493635490",
   appId: "1:230493635490:web:f4b780864dbc64eebda8fb"
 };
-
-// Initialize Firebase
-
        
+        const firebaseConfig = {
+             apiKey: "TU_API_KEY_REAL_VA_AQUI",
+             authDomain: "mercaderia-f1699.firebaseapp.com",
+             projectId: "mercaderia-f1699",
+             storageBucket: "mercaderia-f1699.appspot.com",
+             messagingSenderId: "230493635490",
+             appId: "1:230493635490:web:f4b780864dbc64eebda8fb"
+        };
+        // ============================================================
 
-        // ==========================================
-        // FIN DE LA CONFIGURACIÓN
-        // ==========================================
-
-        // Inicializamos la App
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
         const auth = getAuth(app);
         
-        // Variables globales para la app
         let currentUser = null;
         let productosGlobal = [];
+        let movimientosGlobal = []; // Para guardar historial en memoria
         
-        // Referencias a colecciones
-        // Usamos una estructura simple sin appId dinámico para evitar errores de ruta
         const COLL_MOVIMIENTOS = "movimientos"; 
         const COLL_CONFIG = "configuracion";
 
-        // Autenticación Anónima
-        signInAnonymously(auth).then(() => {
-            console.log("Autenticado anónimamente");
-        }).catch((error) => {
-            console.error("Error auth:", error);
-            alert("Error de conexión con la base de datos: " + error.message);
-        });
-
+        // Autenticación
+        signInAnonymously(auth).catch((error) => alert("Error conexión: " + error.message));
         onAuthStateChanged(auth, (user) => {
             if (user) {
                 currentUser = user;
-                document.getElementById('status-con').innerHTML = '<span class="text-green-500"><i class="fas fa-wifi"></i> Conectado</span>';
-                cargarDatosIniciales();
-                escucharMovimientos();
-            } else {
-                document.getElementById('status-con').innerHTML = '<span class="text-red-500"><i class="fas fa-times"></i> Desconectado</span>';
+                document.getElementById('status-icon').classList.replace('text-red-500', 'text-green-400');
+                inicializarSistema();
             }
         });
 
-        // --- FUNCIONES DE LÓGICA ---
+        async function inicializarSistema() {
+            await cargarConfiguracionProductos();
+            escucharMovimientos();
+        }
 
-        async function cargarDatosIniciales() {
-            // Intentar cargar configuración de productos desde Firebase
+        // --- 1. GESTIÓN DE PRODUCTOS Y CONFIG ---
+        
+        // Lista COMPLETA por defecto (Backup)
+        const PRODUCTOS_DEFAULT = `Media Luna Dulce | Unidad | Docena | 12 | 80
+Media Luna Salada | Unidad | Docena | 12 | 80
+Surtidas Dulces | Unidad | Bandeja | 6 | 60
+Surtidas Saladas | Unidad | Docena | 12 | 50
+Vigilantes | Unidad | Docena | 12 | 70
+Sacramento | Unidad | Docena | 12 | 40
+Palitos Dulces | Unidad | Media Docena | 6 | 30
+Palitos Salados | Unidad | Bolsa | 10 | 50
+Torta Negra | Unidad | - | 1 | 1
+Bolitas | Unidad | Caja | 15 | 90
+Rosquitas | Unidad | Bolsa | 20 | 100
+Pan de Castaña Rellenas | Kg | Unidad | 0.50 | 3
+Extra Cremonas | Kg | Unidad | 0.20 | 5
+Sacramentos Rellenos | Unidad | Docena | 12 | 40
+Bizcochos | Kg | Docena | 0.30 | 2
+Libritos | Kg | Docena | 0.30 | 4
+Libritos c/Semillas | Kg | Docena | 0.35 | 2
+Chipá | Kg | Unidad | 0.05 | 1
+Trenza | Unidad | - | 1 | 10
+Tarta Frutal | Porción | Tarta Entera | 8 | 16
+Panini | Kg | Unidad | 0.15 | 5
+Pan Francés | Kg | Unidad | 0.25 | 10
+Pan de Parrilla | Kg | Unidad | 0.40 | 3
+Torta Fritas | Unidad | Docena | 12 | 20
+Alfajor de Maicena | Unidad | Bandeja | 10 | 80`;
+
+        async function cargarConfiguracionProductos() {
             try {
                 const docRef = doc(db, COLL_CONFIG, "productos_lista");
                 const docSnap = await getDoc(docRef);
                 
+                let csvUsar = PRODUCTOS_DEFAULT;
                 if (docSnap.exists()) {
-                    procesarProductosCSV(docSnap.data().csv);
+                    csvUsar = docSnap.data().csv;
                 } else {
-                    // Si no existe, usamos la lista por defecto
-                    procesarProductosCSV(PRODUCTOS_DEFAULT);
-                    // Y la guardamos para la próxima
                     await setDoc(docRef, { csv: PRODUCTOS_DEFAULT });
                 }
-                llenarSelectProductos();
+                
+                // Poner en el text area de config
+                document.getElementById('config-productos').value = csvUsar;
+                procesarProductosCSV(csvUsar);
             } catch (e) {
-                console.error("Error cargando config:", e);
-                // Fallback si falla la red
+                console.error(e);
                 procesarProductosCSV(PRODUCTOS_DEFAULT);
-                llenarSelectProductos();
             }
         }
 
         function procesarProductosCSV(csvText) {
-            productosGlobal = csvText.split('\n')
-                .map(line => line.trim())
-                .filter(line => line.length > 0)
-                .map((line, index) => {
-                    const parts = line.split('|').map(p => p.trim());
-                    return {
-                        id: 'prod_' + index,
-                        nombre: parts[0],
-                        unidad: parts[1] || 'Unidad',
-                        alterno: parts[2] || '-',
-                        factor: parseFloat(parts[3]) || 1,
-                        stockInicial: parseFloat(parts[4]) || 0
-                    };
-                });
+            productosGlobal = csvText.split('\n').map(l => l.trim()).filter(l => l.length > 0).map((l, i) => {
+                const p = l.split('|').map(s => s.trim());
+                return { id: 'prod_' + i, nombre: p[0], unidad: p[1], alterno: p[2], factor: parseFloat(p[3]) || 1, stockInicial: parseFloat(p[4]) || 0 };
+            });
+            llenarSelectProductos();
         }
 
         function llenarSelectProductos() {
             const sel = document.getElementById('producto');
-            sel.innerHTML = '<option value="" disabled selected>Seleccione producto...</option>';
+            sel.innerHTML = '<option value="" disabled selected>Seleccione...</option>';
             productosGlobal.forEach(p => {
                 const opt = document.createElement('option');
-                opt.value = p.id;
-                opt.text = p.nombre;
-                sel.appendChild(opt);
+                opt.value = p.id; opt.text = p.nombre; sel.appendChild(opt);
             });
         }
 
-        // Escuchar cambios en tiempo real
+        // Guardar cambios de configuración
+        window.guardarConfiguracion = async function() {
+            const nuevoCSV = document.getElementById('config-productos').value;
+            try {
+                await setDoc(doc(db, COLL_CONFIG, "productos_lista"), { csv: nuevoCSV });
+                procesarProductosCSV(nuevoCSV);
+                alert("Productos actualizados correctamente");
+            } catch(e) { alert("Error al guardar config: " + e.message); }
+        }
+
+        // --- 2. NÚCLEO: ESCUCHAR Y CALCULAR ---
+
         function escucharMovimientos() {
-            const q = query(collection(db, COLL_MOVIMIENTOS), orderBy("timestamp", "desc"), limit(50));
+            // Traemos todo para poder filtrar en memoria (más rápido para gráficas)
+            const q = query(collection(db, COLL_MOVIMIENTOS), orderBy("timestamp", "desc"));
             
             onSnapshot(q, (snapshot) => {
-                const movimientos = [];
-                snapshot.forEach((doc) => {
-                    movimientos.push({ id: doc.id, ...doc.data() });
-                });
-                actualizarTablaHistorial(movimientos);
-                actualizarStockVisual(movimientos);
+                movimientosGlobal = [];
+                snapshot.forEach((doc) => movimientosGlobal.push({ id: doc.id, ...doc.data() }));
+                
+                actualizarPanelPrincipal();
+                actualizarHistorialVisual();
+                actualizarGraficos();
             });
         }
 
-        // Funciones de Interfaz
-        window.cambiarVista = function(vistaId) {
-            document.querySelectorAll('.vista').forEach(v => v.classList.add('hidden'));
-            document.getElementById(vistaId).classList.remove('hidden');
-            
-            // Actualizar botones nav
-            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('bg-amber-700'));
-            const activeBtn = document.querySelector(`button[onclick="cambiarVista('${vistaId}')"]`);
-            if(activeBtn) activeBtn.classList.add('bg-amber-700');
+        function obtenerFechaLocal() {
+            const now = new Date();
+            now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+            return now.toISOString().slice(0,16); // Formato YYYY-MM-DDTHH:MM
+        }
+        
+        function esHoy(fechaIsoString) {
+             // Compara YYYY-MM-DD
+             const hoy = obtenerFechaLocal().split('T')[0];
+             return fechaIsoString.startsWith(hoy);
         }
 
-        window.actualizarFormato = function() {
-            const prodId = document.getElementById('producto').value;
-            const prod = productosGlobal.find(p => p.id === prodId);
-            const selFmt = document.getElementById('formato');
-            selFmt.innerHTML = '';
+        function actualizarPanelPrincipal() {
+            // 1. Calcular Stock Actual
+            const stockMap = {};
+            productosGlobal.forEach(p => stockMap[p.id] = p.stockInicial); // Base
             
-            if (prod) {
-                // Opción base
-                let opt1 = document.createElement('option');
-                opt1.value = 'base';
-                opt1.text = prod.unidad;
-                selFmt.appendChild(opt1);
-                
-                // Opción alterna si existe
-                if (prod.alterno !== '-' && prod.alterno !== '') {
-                    let opt2 = document.createElement('option');
-                    opt2.value = 'alterno';
-                    opt2.text = `${prod.alterno} (x${prod.factor})`;
-                    selFmt.appendChild(opt2);
+            // 2. Calcular Producción de HOY (Para tu sistema de facturación)
+            const produccionHoyMap = {}; 
+
+            [...movimientosGlobal].reverse().forEach(m => {
+                // Stock General
+                if (m.tipo === 'ENTRADA') stockMap[m.productoId] += m.cantidadBase;
+                else stockMap[m.productoId] -= m.cantidadBase;
+
+                // Producción Diaria (Solo Entradas de HOY)
+                if (m.tipo === 'ENTRADA' && esHoy(m.fecha)) {
+                    if (!produccionHoyMap[m.productoId]) produccionHoyMap[m.productoId] = 0;
+                    produccionHoyMap[m.productoId] += m.cantidadBase;
                 }
+            });
+
+            // Renderizar Tarjetas de Stock
+            const grid = document.getElementById('grid-stock');
+            grid.innerHTML = '';
+            let alertaStock = 0;
+
+            productosGlobal.forEach(p => {
+                const actual = stockMap[p.id] || 0;
+                if (actual < 10) alertaStock++;
+                
+                // Tarjeta visual
+                grid.innerHTML += `
+                    <div class="bg-white p-4 rounded shadow-sm border-l-4 ${actual < 10 ? 'border-red-500' : 'border-blue-500'}">
+                        <div class="flex justify-between">
+                            <h3 class="font-bold text-gray-700 truncate">${p.nombre}</h3>
+                            <span class="text-xl font-bold">${actual.toFixed(1)}</span>
+                        </div>
+                        <p class="text-xs text-gray-500">${p.unidad}</p>
+                    </div>
+                `;
+            });
+
+            // Renderizar Tabla "Resumen del Día" (Para cargar en el sistema)
+            const tbodyHoy = document.getElementById('tabla-produccion-hoy');
+            tbodyHoy.innerHTML = '';
+            let totalKgItemsHoy = 0;
+            
+            // Solo mostramos productos que tuvieron movimiento hoy
+            const productosConMovimientoHoy = productosGlobal.filter(p => produccionHoyMap[p.id] > 0);
+            
+            if (productosConMovimientoHoy.length === 0) {
+                tbodyHoy.innerHTML = '<tr><td colspan="3" class="text-center py-4 text-gray-400 italic">Aún no se ha producido nada hoy.</td></tr>';
+            } else {
+                productosConMovimientoHoy.forEach(p => {
+                    const cant = produccionHoyMap[p.id];
+                    totalKgItemsHoy += cant;
+                    tbodyHoy.innerHTML += `
+                        <tr class="border-b">
+                            <td class="py-2 font-medium text-gray-800">${p.nombre}</td>
+                            <td class="py-2 text-right font-bold text-green-600">${cant.toFixed(2)}</td>
+                            <td class="py-2 text-right text-xs text-gray-500">${p.unidad}</td>
+                        </tr>
+                    `;
+                });
             }
+
+            // Actualizar KPIs Superiores
+            document.getElementById('kpi-prod-hoy').innerText = totalKgItemsHoy.toFixed(1);
+            document.getElementById('kpi-alertas').innerText = alertaStock;
         }
+
+        // --- 3. GRÁFICOS Y ANÁLISIS ---
+        
+        let chartInstance = null;
+
+        function actualizarGraficos() {
+            const ctx = document.getElementById('graficoProduccion').getContext('2d');
+            
+            // Agrupar producción histórica por producto
+            const produccionTotal = {};
+            movimientosGlobal.forEach(m => {
+                if (m.tipo === 'ENTRADA') {
+                    if (!produccionTotal[m.productoNombre]) produccionTotal[m.productoNombre] = 0;
+                    produccionTotal[m.productoNombre] += m.cantidadBase;
+                }
+            });
+
+            // Ordenar para mostrar los top 5 más producidos
+            const labels = Object.keys(produccionTotal);
+            const data = Object.values(produccionTotal);
+
+            if (chartInstance) chartInstance.destroy();
+
+            chartInstance = new Chart(ctx, {
+                type: 'doughnut', // Gráfico de Torta (Dona)
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Producción Histórica',
+                        data: data,
+                        backgroundColor: [
+                            '#f59e0b', '#ef4444', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#6366f1'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'right', labels: { boxWidth: 10, font: { size: 11 } } }
+                    }
+                }
+            });
+        }
+
+        // --- 4. FUNCIONES DE UI Y CONTROL ---
 
         window.guardarMovimiento = async function(e) {
             e.preventDefault();
-            if (!currentUser) { alert("No estás conectado"); return; }
-
-            const btn = e.target.querySelector('button[type="submit"]');
+            if (!currentUser) return alert("Desconectado");
+            
+            const btn = e.target.querySelector('button');
             btn.disabled = true;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Guardando...';
+            const originalText = btn.innerText;
+            btn.innerText = "Guardando...";
 
             try {
                 const prodId = document.getElementById('producto').value;
                 const prod = productosGlobal.find(p => p.id === prodId);
                 const tipo = document.getElementById('tipo').value;
-                const formato = document.getElementById('formato').value;
-                let cantidad = parseFloat(document.getElementById('cantidad').value);
+                const formato = document.getElementById('formato').value; // base o alterno
+                const cantidad = parseFloat(document.getElementById('cantidad').value);
                 const operario = document.getElementById('operario').value;
-                const fechaInput = document.getElementById('fecha').value;
+                const fecha = document.getElementById('fecha').value;
 
-                // Convertir a unidad base para cálculos
-                let cantidadBase = cantidad;
+                let cantBase = cantidad;
+                let formatoTexto = prod.unidad;
+                
                 if (formato === 'alterno') {
-                    cantidadBase = cantidad * prod.factor;
+                    cantBase = cantidad * prod.factor;
+                    formatoTexto = prod.alterno;
                 }
 
-                // Guardar en Firebase
                 await addDoc(collection(db, COLL_MOVIMIENTOS), {
-                    productoId: prodId,
-                    productoNombre: prod.nombre,
-                    tipo: tipo, // ENTRADA o SALIDA
-                    cantidadOriginal: cantidad,
-                    formatoUsado: formato === 'base' ? prod.unidad : prod.alterno,
-                    cantidadBase: cantidadBase,
-                    operario: operario,
-                    fecha: fechaInput, // Fecha manual
-                    timestamp: new Date(), // Fecha sistema para orden
-                    usuario: currentUser.uid
+                    productoId: prodId, productoNombre: prod.nombre,
+                    tipo: tipo, cantidadOriginal: cantidad, formatoUsado: formatoTexto,
+                    cantidadBase: cantBase, operario: operario, fecha: fecha,
+                    timestamp: new Date().toISOString()
                 });
 
-                alert("Movimiento registrado con éxito");
+                alert("Registrado correctamente");
                 e.target.reset();
-                // Reset fecha a hoy
-                establecerFechaHoy();
-                
+                establecerFechaInput();
+
             } catch (error) {
-                console.error(error);
-                alert("Error al guardar: " + error.message);
+                alert("Error: " + error.message);
             } finally {
                 btn.disabled = false;
-                btn.textContent = 'Registrar Movimiento';
+                btn.innerText = originalText;
             }
         }
 
-        function actualizarTablaHistorial(movs) {
-            const tbody = document.getElementById('tabla-body');
-            tbody.innerHTML = '';
-            
-            if (movs.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-500">No hay movimientos registrados</td></tr>';
-                return;
+        window.actualizarFormato = function() {
+            const p = productosGlobal.find(x => x.id === document.getElementById('producto').value);
+            const s = document.getElementById('formato');
+            s.innerHTML = '';
+            if(p) {
+                s.add(new Option(p.unidad + " (Base)", "base"));
+                if(p.alterno !== '-') s.add(new Option(p.alterno + " (x" + p.factor + ")", "alterno"));
             }
+        }
 
-            movs.forEach(m => {
-                const color = m.tipo === 'ENTRADA' ? 'text-green-600' : 'text-red-600';
-                const signo = m.tipo === 'ENTRADA' ? '+' : '-';
-                const row = `
-                    <tr class="border-b hover:bg-gray-50">
-                        <td class="p-3">${new Date(m.fecha).toLocaleDateString()}</td>
-                        <td class="p-3 font-medium">${m.productoNombre}</td>
-                        <td class="p-3"><span class="text-xs font-bold px-2 py-1 rounded ${m.tipo === 'ENTRADA' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">${m.tipo}</span></td>
-                        <td class="p-3 ${color} font-bold">${signo}${m.cantidadOriginal} ${m.formatoUsado}</td>
-                        <td class="p-3 text-gray-500 text-sm">${m.operario}</td>
+        window.cambiarVista = function(id) {
+            document.querySelectorAll('.vista').forEach(d => d.classList.add('hidden'));
+            document.getElementById(id).classList.remove('hidden');
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('border-amber-300', 'text-white'));
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.add('text-amber-200'));
+            const btn = document.getElementById('btn-' + id);
+            if(btn) {
+                 btn.classList.add('border-amber-300', 'text-white');
+                 btn.classList.remove('text-amber-200');
+            }
+        }
+        
+        window.limpiarBaseDeDatos = async function() {
+            const pass = prompt("⚠️ PRECAUCIÓN ⚠️\nEsto borrará TODO el historial de movimientos para siempre.\n\nIngrese la contraseña de seguridad (admin):");
+            if (pass !== "admin") return alert("Contraseña incorrecta");
+
+            if (!confirm("¿Estás 100% seguro? No se puede deshacer.")) return;
+
+            // Borrado masivo (en cliente es lento pero funciona para pocos datos)
+            const q = query(collection(db, COLL_MOVIMIENTOS));
+            const snapshot = await getDocs(q);
+            let count = 0;
+            snapshot.forEach(async (doc) => {
+                await deleteDoc(doc.ref);
+                count++;
+            });
+            alert(`Se han eliminado ${snapshot.size} registros. El sistema está limpio.`);
+        }
+
+        function actualizarHistorialVisual() {
+            const tb = document.getElementById('tabla-historial');
+            tb.innerHTML = '';
+            movimientosGlobal.slice(0, 50).forEach(m => {
+                tb.innerHTML += `
+                    <tr class="border-b text-sm hover:bg-gray-50">
+                        <td class="p-2">${m.fecha.replace('T', ' ').slice(5)}</td>
+                        <td class="p-2 font-medium">${m.productoNombre}</td>
+                        <td class="p-2"><span class="px-2 rounded ${m.tipo==='ENTRADA'?'bg-green-100 text-green-700':'bg-red-100 text-red-700'} text-xs font-bold">${m.tipo}</span></td>
+                        <td class="p-2 font-bold">${m.cantidadOriginal} ${m.formatoUsado}</td>
+                        <td class="p-2 text-gray-500">${m.operario}</td>
                     </tr>
                 `;
-                tbody.innerHTML += row;
             });
         }
 
-        function actualizarStockVisual(movs) {
-            // Calculamos stock en memoria
-            const stockMap = {};
-            
-            // 1. Inicializar con stock base
-            productosGlobal.forEach(p => {
-                stockMap[p.id] = p.stockInicial;
-            });
-
-            // 2. Aplicar movimientos
-            // Recorremos en orden cronológico inverso (del más viejo al más nuevo) para calcular bien
-            // Pero como movs viene ordenado por 'desc', lo recorremos al revés
-            [...movs].reverse().forEach(m => {
-                if (!stockMap[m.productoId]) stockMap[m.productoId] = 0;
-                if (m.tipo === 'ENTRADA') {
-                    stockMap[m.productoId] += m.cantidadBase;
-                } else {
-                    stockMap[m.productoId] -= m.cantidadBase;
-                }
-            });
-
-            // 3. Renderizar tarjetas
-            const grid = document.getElementById('grid-stock');
-            grid.innerHTML = '';
-            
-            productosGlobal.forEach(p => {
-                const stockActual = stockMap[p.id] || 0;
-                const esBajo = stockActual < 10; // Alerta si hay menos de 10
-                
-                const card = `
-                    <div class="bg-white p-4 rounded-lg shadow border-l-4 ${esBajo ? 'border-red-500' : 'border-green-500'}">
-                        <div class="flex justify-between items-start">
-                            <div>
-                                <h3 class="font-bold text-gray-800 text-lg">${p.nombre}</h3>
-                                <p class="text-sm text-gray-500">Unidad: ${p.unidad}</p>
-                            </div>
-                            <div class="text-right">
-                                <span class="block text-2xl font-bold ${esBajo ? 'text-red-600' : 'text-gray-800'}">${stockActual.toFixed(1)}</span>
-                                ${p.alterno !== '-' ? `<span class="text-xs text-gray-400">aprox ${(stockActual/p.factor).toFixed(1)} ${p.alterno}</span>` : ''}
-                            </div>
-                        </div>
-                    </div>
-                `;
-                grid.innerHTML += card;
-            });
+        function establecerFechaInput() {
+            document.getElementById('fecha').value = obtenerFechaLocal();
         }
 
-        function establecerFechaHoy() {
-            const now = new Date();
-            // Ajuste para zona horaria local
-            now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-            document.getElementById('fecha').value = now.toISOString().slice(0,16);
-        }
-
-        // Datos por defecto (Backup)
-        const PRODUCTOS_DEFAULT = `
-Media Luna Dulce | Unidad | Docena | 12 | 100
-Media Luna Salada | Unidad | Docena | 12 | 100
-Pan Frances | Kg | Bolsa | 20 | 50
-Bizcochos | Kg | - | 1 | 20
-Tortitas Negras | Unidad | Docena | 12 | 60
-Vigilantes | Unidad | Docena | 12 | 60
-Cañoncitos | Unidad | Bandeja | 6 | 40
-`;
-
-        // Inicialización al cargar DOM
-        window.addEventListener('DOMContentLoaded', () => {
-            establecerFechaHoy();
-        });
+        window.addEventListener('DOMContentLoaded', establecerFechaInput);
 
     </script>
 </head>
-<body class="bg-gray-100 text-gray-800 font-sans h-screen flex flex-col overflow-hidden">
+<body class="bg-gray-100 h-screen flex flex-col overflow-hidden text-gray-800 font-sans">
 
-    <header class="bg-amber-600 text-white shadow-md z-10 flex-none">
+    <header class="bg-amber-700 text-white shadow-md flex-none z-20">
         <div class="container mx-auto px-4 py-3 flex justify-between items-center">
-            <div class="flex items-center gap-3">
-                <i class="fas fa-bread-slice text-2xl"></i>
-                <h1 class="text-xl font-bold tracking-wide">Control Panadería</h1>
+            <div class="flex items-center gap-2">
+                <i class="fas fa-bread-slice text-2xl text-amber-300"></i>
+                <div>
+                    <h1 class="font-bold text-lg leading-tight">Control Panadería</h1>
+                    <p class="text-xs text-amber-300 opacity-80">Gestión de Producción</p>
+                </div>
             </div>
-            <div id="status-con" class="text-sm bg-white/20 px-3 py-1 rounded-full backdrop-blur-sm">
-                Conectando...
-            </div>
+            <i id="status-icon" class="fas fa-circle text-red-500 text-xs"></i>
         </div>
     </header>
 
-    <nav class="bg-amber-800 text-amber-100 flex-none">
+    <div class="bg-amber-800 shadow-inner flex-none overflow-x-auto">
         <div class="container mx-auto flex">
-            <button onclick="cambiarVista('vista-panel')" class="nav-btn flex-1 py-3 text-center hover:bg-amber-700 transition font-medium bg-amber-700 border-b-4 border-amber-500">
-                <i class="fas fa-th-large mr-2"></i>Stock Actual
+            <button id="btn-vista-panel" onclick="cambiarVista('vista-panel')" class="nav-btn flex-1 py-3 text-center border-b-4 border-amber-300 text-white font-medium text-sm transition">
+                <i class="fas fa-chart-pie block mb-1"></i>Panel
             </button>
-            <button onclick="cambiarVista('vista-carga')" class="nav-btn flex-1 py-3 text-center hover:bg-amber-700 transition font-medium">
-                <i class="fas fa-plus-circle mr-2"></i>Registrar
+            <button id="btn-vista-carga" onclick="cambiarVista('vista-carga')" class="nav-btn flex-1 py-3 text-center border-b-4 border-transparent text-amber-200 font-medium text-sm transition hover:text-white">
+                <i class="fas fa-plus-circle block mb-1"></i>Cargar
             </button>
-            <button onclick="cambiarVista('vista-historial')" class="nav-btn flex-1 py-3 text-center hover:bg-amber-700 transition font-medium">
-                <i class="fas fa-history mr-2"></i>Historial
+            <button id="btn-vista-historial" onclick="cambiarVista('vista-historial')" class="nav-btn flex-1 py-3 text-center border-b-4 border-transparent text-amber-200 font-medium text-sm transition hover:text-white">
+                <i class="fas fa-history block mb-1"></i>Historial
+            </button>
+            <button id="btn-vista-config" onclick="cambiarVista('vista-config')" class="nav-btn flex-1 py-3 text-center border-b-4 border-transparent text-amber-200 font-medium text-sm transition hover:text-white">
+                <i class="fas fa-cogs block mb-1"></i>Config
             </button>
         </div>
-    </nav>
+    </div>
 
-    <main class="flex-1 overflow-y-auto p-4 md:p-6">
-        
-        <div id="vista-panel" class="vista container mx-auto max-w-5xl">
-            <h2 class="text-2xl font-bold text-gray-700 mb-6 border-b pb-2">Estado del Stock</h2>
-            <div id="grid-stock" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div class="col-span-full text-center py-10 text-gray-400">
-                    <i class="fas fa-circle-notch fa-spin text-3xl mb-3"></i>
-                    <p>Cargando datos del inventario...</p>
+    <main class="flex-1 overflow-y-auto bg-gray-50 p-4">
+
+        <div id="vista-panel" class="vista container mx-auto max-w-5xl space-y-6">
+            
+            <div class="grid grid-cols-2 gap-4">
+                <div class="bg-white p-4 rounded-lg shadow border-l-4 border-green-500">
+                    <p class="text-xs text-gray-500 uppercase font-bold">Producción de HOY</p>
+                    <p class="text-2xl font-bold text-gray-800" id="kpi-prod-hoy">0</p>
+                    <p class="text-xs text-gray-400">unidades/kg totales</p>
+                </div>
+                <div class="bg-white p-4 rounded-lg shadow border-l-4 border-red-500">
+                    <p class="text-xs text-gray-500 uppercase font-bold">Stock Bajo</p>
+                    <p class="text-2xl font-bold text-gray-800" id="kpi-alertas">0</p>
+                    <p class="text-xs text-gray-400">productos</p>
                 </div>
             </div>
+
+            <div class="bg-white rounded-lg shadow overflow-hidden">
+                <div class="bg-green-50 px-4 py-3 border-b border-green-100 flex justify-between items-center">
+                    <h3 class="font-bold text-green-800"><i class="fas fa-clipboard-check mr-2"></i>Resumen del Día</h3>
+                    <span class="text-xs bg-green-200 text-green-800 px-2 py-1 rounded">Lo que hiciste hoy</span>
+                </div>
+                <div class="p-4">
+                    <table class="w-full text-sm">
+                        <thead class="text-xs text-gray-500 border-b">
+                            <tr><th class="text-left pb-2">Producto</th><th class="text-right pb-2">Cant. Total</th><th class="text-right pb-2">Unid.</th></tr>
+                        </thead>
+                        <tbody id="tabla-produccion-hoy">
+                            </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="bg-white p-4 rounded-lg shadow h-64">
+                <h3 class="font-bold text-gray-700 mb-2 text-sm">Distribución de Producción Histórica</h3>
+                <div class="h-52 relative">
+                    <canvas id="graficoProduccion"></canvas>
+                </div>
+            </div>
+
+            <h3 class="font-bold text-gray-700 mt-6 mb-2">Stock Actual en Depósito</h3>
+            <div id="grid-stock" class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                </div>
         </div>
 
-        <div id="vista-carga" class="vista hidden container mx-auto max-w-xl">
-            <div class="bg-white rounded-xl shadow-lg p-6">
-                <h2 class="text-2xl font-bold text-gray-700 mb-6 text-center">Nuevo Movimiento</h2>
-                
+        <div id="vista-carga" class="vista hidden container mx-auto max-w-md">
+            <div class="bg-white p-6 rounded-lg shadow-lg">
+                <h2 class="text-xl font-bold text-gray-700 mb-4 text-center">Registrar Movimiento</h2>
                 <form onsubmit="guardarMovimiento(event)" class="space-y-4">
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Producto</label>
-                        <select id="producto" onchange="actualizarFormato()" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none bg-gray-50">
-                            <option>Cargando lista...</option>
-                        </select>
+                        <label class="block text-xs font-bold text-gray-500 uppercase">Producto</label>
+                        <select id="producto" onchange="actualizarFormato()" required class="input-field"></select>
                     </div>
-
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Acción</label>
-                            <select id="tipo" required class="w-full p-3 border border-gray-300 rounded-lg bg-white">
-                                <option value="ENTRADA">Producción (Entrada)</option>
+                    <div class="flex gap-2">
+                        <div class="w-1/2">
+                            <label class="block text-xs font-bold text-gray-500 uppercase">Acción</label>
+                            <select id="tipo" class="input-field">
+                                <option value="ENTRADA">Producción</option>
                                 <option value="SALIDA">Venta/Salida</option>
                             </select>
                         </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Unidad Medida</label>
-                            <select id="formato" required class="w-full p-3 border border-gray-300 rounded-lg bg-white">
-                                <option value="base">Unidad Base</option>
-                            </select>
+                        <div class="w-1/2">
+                            <label class="block text-xs font-bold text-gray-500 uppercase">Formato</label>
+                            <select id="formato" class="input-field"><option value="base">Base</option></select>
                         </div>
                     </div>
-
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Cantidad</label>
-                        <input type="number" id="cantidad" step="0.01" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 text-lg font-bold text-center">
+                        <label class="block text-xs font-bold text-gray-500 uppercase">Cantidad</label>
+                        <input type="number" id="cantidad" step="0.01" required class="input-field text-center text-xl font-bold text-amber-700" placeholder="0">
                     </div>
-
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Responsable</label>
-                            <select id="operario" required class="w-full p-3 border border-gray-300 rounded-lg bg-white">
-                                <option>Mañana</option>
-                                <option>Tarde</option>
-                                <option>Noche</option>
-                                <option>Mostrador</option>
+                    <div class="flex gap-2">
+                        <div class="w-1/2">
+                            <label class="block text-xs font-bold text-gray-500 uppercase">Operario</label>
+                            <select id="operario" class="input-field">
+                                <option>Mañana</option><option>Tarde</option><option>Noche</option>
                             </select>
                         </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Fecha/Hora</label>
-                            <input type="datetime-local" id="fecha" required class="w-full p-3 border border-gray-300 rounded-lg text-sm">
+                        <div class="w-1/2">
+                            <label class="block text-xs font-bold text-gray-500 uppercase">Fecha</label>
+                            <input type="datetime-local" id="fecha" required class="input-field text-xs">
                         </div>
                     </div>
-
-                    <button type="submit" class="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-4 rounded-lg shadow-md transition transform active:scale-95 mt-4">
-                        Registrar Movimiento
-                    </button>
+                    <button type="submit" class="w-full bg-amber-600 text-white py-3 rounded-lg font-bold shadow hover:bg-amber-700 transition">Guardar</button>
                 </form>
             </div>
         </div>
 
         <div id="vista-historial" class="vista hidden container mx-auto max-w-4xl">
-            <h2 class="text-2xl font-bold text-gray-700 mb-6 border-b pb-2">Últimos Movimientos</h2>
             <div class="bg-white rounded-lg shadow overflow-hidden">
+                <div class="p-3 bg-gray-100 border-b font-bold text-gray-600">Últimos 50 Movimientos</div>
                 <div class="overflow-x-auto">
                     <table class="w-full whitespace-nowrap">
-                        <thead class="bg-gray-100 text-gray-600 text-left text-sm uppercase">
-                            <tr>
-                                <th class="p-3">Fecha</th>
-                                <th class="p-3">Producto</th>
-                                <th class="p-3">Tipo</th>
-                                <th class="p-3">Cantidad</th>
-                                <th class="p-3">Resp.</th>
-                            </tr>
+                        <thead class="bg-gray-50 text-xs text-gray-500 uppercase">
+                            <tr><th class="p-2 text-left">Fecha</th><th class="p-2 text-left">Prod</th><th class="p-2 text-left">Tipo</th><th class="p-2 text-left">Cant</th><th class="p-2 text-left">Op</th></tr>
                         </thead>
-                        <tbody id="tabla-body" class="divide-y divide-gray-200 text-sm text-gray-700">
-                            </tbody>
+                        <tbody id="tabla-historial"></tbody>
                     </table>
                 </div>
             </div>
         </div>
 
+        <div id="vista-config" class="vista hidden container mx-auto max-w-lg space-y-6">
+            <div class="bg-white p-5 rounded-lg shadow">
+                <h3 class="font-bold text-gray-800 mb-2"><i class="fas fa-list mr-2"></i>Editar Productos</h3>
+                <p class="text-xs text-gray-500 mb-2">Formato: Nombre | Unidad | Alterno | Factor | StockInicial</p>
+                <textarea id="config-productos" class="w-full border p-2 text-xs font-mono h-40 rounded bg-gray-50"></textarea>
+                <button onclick="guardarConfiguracion()" class="mt-2 w-full bg-blue-600 text-white py-2 rounded font-bold text-sm">Guardar Cambios de Productos</button>
+            </div>
+
+            <div class="bg-red-50 p-5 rounded-lg shadow border border-red-100">
+                <h3 class="font-bold text-red-700 mb-2"><i class="fas fa-exclamation-triangle mr-2"></i>Zona de Peligro</h3>
+                <p class="text-sm text-red-600 mb-3">Si necesitas limpiar todas las pruebas para empezar de cero.</p>
+                <button onclick="limpiarBaseDeDatos()" class="w-full bg-red-600 text-white py-3 rounded font-bold shadow hover:bg-red-700">
+                    <i class="fas fa-trash-alt mr-2"></i>BORRAR BASE DE DATOS
+                </button>
+            </div>
+        </div>
+
     </main>
 
+    <style>
+        .input-field { width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 0.5rem; outline: none; transition: border-color 0.2s; }
+        .input-field:focus { border-color: #d97706; ring: 2px solid #d97706; }
+    </style>
 </body>
 </html>
