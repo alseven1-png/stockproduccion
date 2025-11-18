@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Control Panadería - Admin Seguro</title>
+    <title>Control Panadería - v7.0</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -16,11 +16,11 @@
     <script>
         // ============================================================
         // 1. CONFIGURACIÓN DE SEGURIDAD
-        // Cambia "2550LP" por tu contraseña privada de administrador
+        // Cambia "1234" por tu contraseña privada de administrador
         // ============================================================
         const CLAVE_ADMIN = "2550LP"; 
 
-const firebaseConfig = {
+        const firebaseConfig = {
   apiKey: "AIzaSyBKV1mVfhFZJgeZRu6FHgz-2_KVrKDlHoc",
   authDomain: "mercaderia-f1699.firebaseapp.com",
   projectId: "mercaderia-f1699",
@@ -28,8 +28,8 @@ const firebaseConfig = {
   messagingSenderId: "230493635490",
   appId: "1:230493635490:web:f4b780864dbc64eebda8fb"
 };
-       
 
+        
         // ============================================================
 
         firebase.initializeApp(firebaseConfig);
@@ -40,7 +40,7 @@ const firebaseConfig = {
         let productosGlobal = [];
         let operariosGlobal = [];
         let movimientosGlobal = []; 
-        let isAdminUnlocked = false; // Estado de seguridad
+        let isAdminUnlocked = false; 
         
         const COLL_MOVIMIENTOS = "movimientos"; 
         const COLL_CONFIG = "configuracion";
@@ -65,7 +65,6 @@ const firebaseConfig = {
 
         // --- GESTIÓN DE CONFIGURACIÓN ---
         
-        // NOTA: Puse todos los stocks finales en 0 para que arranque limpio
         const PRODUCTOS_DEFAULT = `Media Luna Dulce | Unidad | Lata | 12 | 0
 Media Luna Salada | Unidad | Lata | 12 | 0
 Surtidas Dulces | Unidad | Bandeja | 6 | 0
@@ -175,6 +174,10 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 0`;
                     actualizarHistorialVisual(); 
                 });
         }
+        
+        function esEntrada(tipo) {
+            return tipo === 'ENTRADA' || tipo === 'SOBRANTE';
+        }
 
         function obtenerFechaLocal() {
             const now = new Date();
@@ -191,16 +194,25 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 0`;
             const stockMap = {};
             productosGlobal.forEach(p => stockMap[p.id] = p.stockInicial);
             const produccionHoyMap = {}; 
+            const produccionHistoricaMap = {};
 
             [...movimientosGlobal].reverse().forEach(m => {
                 // Stock General (Histórico + Hoy)
-                if (m.tipo === 'ENTRADA') stockMap[m.productoId] += m.cantidadBase;
+                const isPositive = esEntrada(m.tipo);
+                
+                if (isPositive) stockMap[m.productoId] += m.cantidadBase;
                 else stockMap[m.productoId] -= m.cantidadBase;
 
-                // Producción Diaria (Solo para pasar al mostrador)
-                if (m.tipo === 'ENTRADA' && esHoy(m.fecha)) {
+                // Producción Diaria (para el mostrador - solo ENTRADA/SOBRANTE de HOY)
+                if (isPositive && esHoy(m.fecha)) {
                     if (!produccionHoyMap[m.productoId]) produccionHoyMap[m.productoId] = 0;
                     produccionHoyMap[m.productoId] += m.cantidadBase;
+                }
+                
+                // Producción Histórica (para el gráfico - solo ENTRADA/SOBRANTE)
+                 if (isPositive) {
+                    if (!produccionHistoricaMap[m.productoNombre]) produccionHistoricaMap[m.productoNombre] = 0;
+                    produccionHistoricaMap[m.productoNombre] += m.cantidadBase;
                 }
             });
 
@@ -237,7 +249,7 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 0`;
                 if (actual < 10) alertaStock++;
                 
                 grid.innerHTML += `
-                    <div class="bg-white p-3 rounded shadow border-l-4 ${actual < 10 ? 'border-red-500' : 'border-blue-500'} flex justify-between items-center">
+                    <div class="bg-white p-3 rounded shadow border-l-4 ${actual < 10 ? 'border-red-500' : 'border-amber-500'} flex justify-between items-center">
                         <div class="overflow-hidden">
                             <h3 class="font-bold text-gray-700 truncate text-sm">${p.nombre}</h3>
                             <p class="text-xs text-gray-400">Total Depósito</p>
@@ -251,7 +263,41 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 0`;
             });
 
             document.getElementById('kpi-alertas').innerText = alertaStock;
+            
+            // 3. Actualizar Gráficos
+            actualizarGraficos(produccionHistoricaMap);
         }
+
+        // --- GRÁFICOS ---
+        let chartInstance = null;
+        function actualizarGraficos(produccionHistoricaMap) {
+            const ctx = document.getElementById('graficoProduccion');
+            if(!ctx) return;
+
+            const labels = Object.keys(produccionHistoricaMap);
+            const data = Object.values(produccionHistoricaMap);
+
+            if (chartInstance) chartInstance.destroy();
+
+            chartInstance = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Histórico Total',
+                        data: data,
+                        backgroundColor: ['#f59e0b', '#ef4444', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6', '#f472b6', '#fb7185'],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { position: 'right', labels: { boxWidth: 10, font: { size: 10 } } } }
+                }
+            });
+        }
+
 
         // --- FUNCIONES INTERFAZ ---
 
@@ -265,7 +311,7 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 0`;
 
             const prodId = document.getElementById('producto').value;
             const prod = productosGlobal.find(p => p.id === prodId);
-            const tipo = document.getElementById('tipo').value;
+            const tipo = document.getElementById('tipo').value; // ENTRADA, SALIDA, SOBRANTE
             const formato = document.getElementById('formato').value;
             const cantidad = parseFloat(document.getElementById('cantidad').value);
             const operario = document.getElementById('operario').value;
@@ -278,18 +324,26 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 0`;
                 cantBase = cantidad * prod.factor;
                 formatoTexto = prod.alterno; 
             }
+            
+            // El tipo se guarda tal cual (ENTRADA, SALIDA, SOBRANTE)
+            let tipoGuardar = tipo; 
+            
+            // Si es SALIDA, la cantidad base debe ser negativa para el cálculo de stock
+            let cantBaseCalculo = cantBase;
+            if (tipo === 'SALIDA') {
+                 cantBaseCalculo = -cantBase;
+            }
 
             db.collection(COLL_MOVIMIENTOS).add({
                 productoId: prodId, productoNombre: prod.nombre,
-                tipo: tipo, cantidadOriginal: cantidad, formatoUsado: formatoTexto,
-                cantidadBase: cantBase, operario: operario, fecha: fecha,
+                tipo: tipoGuardar, cantidadOriginal: cantidad, formatoUsado: formatoTexto,
+                cantidadBase: cantBaseCalculo, operario: operario, fecha: fecha,
                 timestamp: new Date().toISOString()
             }).then(() => {
-                alert("Movimiento registrado");
+                alert(`Movimiento ${tipo} registrado`);
                 e.target.reset();
                 establecerFechaInput();
                 actualizarFormato(); 
-                // Mantener operario seleccionado
                 document.getElementById('operario').value = operario; 
             }).catch((err) => {
                 alert("Error: " + err.message);
@@ -313,7 +367,6 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 0`;
 
         // --- SEGURIDAD Y CONFIGURACIÓN ---
 
-        // Función para pedir clave
         function verificarAdmin() {
             if (isAdminUnlocked) return true;
             const pass = prompt("🔒 ACCESO RESTRINGIDO\nIngrese la contraseña de Administrador:");
@@ -327,27 +380,26 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 0`;
         }
 
         window.cambiarVista = function(id) {
-            // SEGURIDAD: Si quiere ir a Config, pedir clave
             if (id === 'vista-config') {
-                if (!verificarAdmin()) return; // Si falla la clave, no cambia de vista
+                if (!verificarAdmin()) return; 
             }
 
             document.querySelectorAll('.vista').forEach(d => d.classList.add('hidden'));
             document.getElementById(id).classList.remove('hidden');
             
             document.querySelectorAll('.nav-btn').forEach(b => {
-                b.classList.remove('bg-amber-900', 'text-white');
-                b.classList.add('text-amber-100');
+                b.classList.remove('border-amber-300', 'text-white', 'font-bold');
+                b.classList.add('border-transparent', 'text-amber-100');
             });
             const btn = document.getElementById('btn-' + id);
             if(btn) {
-                 btn.classList.add('bg-amber-900', 'text-white');
-                 btn.classList.remove('text-amber-100');
+                 btn.classList.add('border-amber-300', 'text-white', 'font-bold');
+                 btn.classList.remove('border-transparent', 'text-amber-100');
             }
         }
 
         window.guardarConfiguracion = async function() {
-            if (!verificarAdmin()) return; // Doble chequeo
+            if (!verificarAdmin()) return; 
 
             const nuevoProd = document.getElementById('config-productos').value;
             const nuevosOps = document.getElementById('config-operarios').value;
@@ -369,13 +421,11 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 0`;
             
             if (!confirm("¿Estás seguro? Se borrarán todos los movimientos históricos y el stock volverá a 0.")) return;
 
-            // 1. Borrar Movimientos
             const snap = await db.collection(COLL_MOVIMIENTOS).get();
             const batch = db.batch();
             snap.docs.forEach(doc => batch.delete(doc.ref));
             await batch.commit();
 
-            // 2. Resetear Configuración de Stock a 0 (Usando el default)
             await db.collection(COLL_CONFIG).doc("productos_lista").set({ csv: PRODUCTOS_DEFAULT });
             document.getElementById('config-productos').value = PRODUCTOS_DEFAULT;
             procesarProductosCSV(PRODUCTOS_DEFAULT);
@@ -392,6 +442,23 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 0`;
             actualizarHistorialVisual();
         }
 
+        function getColorClase(tipo) {
+            if (tipo === 'ENTRADA') return 'text-green-600';
+            if (tipo === 'SOBRANTE') return 'text-blue-600'; // Nuevo color para Sobrante
+            return 'text-red-600';
+        }
+
+        function getSigno(tipo) {
+            if (tipo === 'SALIDA') return '-';
+            return '+';
+        }
+
+        function getAbrev(tipo) {
+            if (tipo === 'ENTRADA') return 'PROD';
+            if (tipo === 'SALIDA') return 'VENTA';
+            return 'SOB';
+        }
+
         function actualizarHistorialVisual() {
             const div = document.getElementById('contenedor-historial');
             div.innerHTML = '';
@@ -402,14 +469,17 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 0`;
             }
 
             if (modoHistorial === 'cronologico') {
-                let html = `<table class="w-full text-sm"><thead class="bg-gray-100 text-gray-500"><tr><th class="p-2 text-left">Hora</th><th class="p-2 text-left">Producto</th><th class="p-2 text-right">Cant</th><th class="p-2 text-right">Op</th></tr></thead><tbody>`;
+                let html = `<table class="w-full text-sm"><thead class="bg-gray-100 text-gray-500"><tr><th class="p-2 text-left">Hora</th><th class="p-2 text-left">Producto</th><th class="p-2 text-center">Tipo</th><th class="p-2 text-right">Cant</th><th class="p-2 text-right">Op</th></tr></thead><tbody>`;
                 movimientosGlobal.slice(0, 100).forEach(m => {
                     const hora = m.fecha.slice(11,16);
                     const dia = m.fecha.slice(8,10); 
+                    const color = getColorClase(m.tipo);
+                    const abrev = getAbrev(m.tipo);
                     html += `<tr class="border-b hover:bg-gray-50">
                         <td class="p-2 text-gray-500 text-xs">${dia} ${hora}</td>
-                        <td class="p-2 font-medium">${m.productoNombre} <span class="text-xs text-gray-400">(${m.tipo.charAt(0)})</span></td>
-                        <td class="p-2 text-right font-bold ${m.tipo==='ENTRADA'?'text-green-600':'text-red-600'}">${m.cantidadOriginal} ${m.formatoUsado}</td>
+                        <td class="p-2 font-medium">${m.productoNombre}</td>
+                        <td class="p-2 text-center text-xs font-bold"><span class="bg-gray-200 px-1 rounded-full text-gray-600">${abrev}</span></td>
+                        <td class="p-2 text-right font-bold ${color}">${getSigno(m.tipo)}${m.cantidadOriginal} ${m.formatoUsado}</td>
                          <td class="p-2 text-right text-xs text-gray-500">${m.operario}</td>
                     </tr>`;
                 });
@@ -426,19 +496,20 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 0`;
                 Object.keys(agrupado).sort().forEach(prod => {
                     let itemsHtml = '';
                     agrupado[prod].forEach(m => {
+                         const color = getColorClase(m.tipo);
                          itemsHtml += `<div class="flex justify-between text-xs border-b border-gray-100 py-1">
                             <span class="text-gray-500">${m.fecha.slice(8,10)}/${m.fecha.slice(5,7)} ${m.fecha.slice(11,16)} - ${m.operario}</span>
-                            <span class="font-bold ${m.tipo==='ENTRADA'?'text-green-600':'text-red-600'}">${m.tipo==='ENTRADA' ? '+':'-'}${m.cantidadOriginal} ${m.formatoUsado}</span>
+                            <span class="font-bold ${color}">${getSigno(m.tipo)}${m.cantidadOriginal} ${m.formatoUsado} (${getAbrev(m.tipo)})</span>
                          </div>`;
                     });
 
                     div.innerHTML += `
-                        <div class="bg-white border rounded mb-2 overflow-hidden">
-                            <div class="bg-gray-100 p-2 font-bold text-gray-700 flex justify-between">
+                        <div class="bg-white border rounded mb-2 overflow-hidden shadow-sm">
+                            <div class="bg-amber-50 p-2 font-bold text-amber-900 flex justify-between">
                                 <span>${prod}</span>
-                                <span class="text-xs bg-gray-200 px-2 rounded-full pt-1">${agrupado[prod].length} movs</span>
+                                <span class="text-xs bg-amber-200 px-2 rounded-full pt-1">${agrupado[prod].length} movs</span>
                             </div>
-                            <div class="p-2 bg-white hidden group-hover:block">
+                            <div class="p-2 bg-white">
                                 ${itemsHtml}
                             </div>
                         </div>
@@ -473,16 +544,16 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 0`;
 
     <div class="bg-amber-800 shadow-inner flex-none">
         <div class="container mx-auto flex">
-            <button id="btn-vista-panel" onclick="cambiarVista('vista-panel')" class="nav-btn flex-1 py-3 text-center bg-amber-900 text-white font-medium text-sm transition border-r border-amber-900/50">
+            <button id="btn-vista-panel" onclick="cambiarVista('vista-panel')" class="nav-btn flex-1 py-3 text-center border-b-4 border-amber-300 text-white font-bold text-sm transition border-r border-amber-900/50">
                 <i class="fas fa-clipboard-list block mb-1"></i>Resumen
             </button>
-            <button id="btn-vista-carga" onclick="cambiarVista('vista-carga')" class="nav-btn flex-1 py-3 text-center text-amber-100 font-medium text-sm transition border-r border-amber-900/50">
+            <button id="btn-vista-carga" onclick="cambiarVista('vista-carga')" class="nav-btn flex-1 py-3 text-center border-b-4 border-transparent text-amber-100 font-medium text-sm transition border-r border-amber-900/50">
                 <i class="fas fa-plus-circle block mb-1"></i>Cargar
             </button>
-            <button id="btn-vista-historial" onclick="cambiarVista('vista-historial')" class="nav-btn flex-1 py-3 text-center text-amber-100 font-medium text-sm transition border-r border-amber-900/50">
+            <button id="btn-vista-historial" onclick="cambiarVista('vista-historial')" class="nav-btn flex-1 py-3 text-center border-b-4 border-transparent text-amber-100 font-medium text-sm transition border-r border-amber-900/50">
                 <i class="fas fa-history block mb-1"></i>Historial
             </button>
-            <button id="btn-vista-config" onclick="cambiarVista('vista-config')" class="nav-btn flex-1 py-3 text-center text-amber-100 font-medium text-sm transition">
+            <button id="btn-vista-config" onclick="cambiarVista('vista-config')" class="nav-btn flex-1 py-3 text-center border-b-4 border-transparent text-amber-100 font-medium text-sm transition">
                 <i class="fas fa-lock block mb-1"></i>Config
             </button>
         </div>
@@ -511,6 +582,13 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 0`;
                     </table>
                 </div>
             </div>
+            
+            <div class="bg-white p-3 rounded-lg shadow h-64">
+                <h3 class="font-bold text-gray-700 mb-1 text-sm">Distribución Histórica (Producción/Sobrante)</h3>
+                <div class="h-56 relative">
+                    <canvas id="graficoProduccion"></canvas>
+                </div>
+            </div>
 
             <div class="flex justify-between items-center mt-6 mb-2">
                 <h3 class="font-bold text-gray-700 text-sm">Stock General (Depósito)</h3>
@@ -534,8 +612,9 @@ Alfajor de Maicena | Unidad | Bandeja | 10 | 0`;
                         <div class="w-1/2">
                             <label class="lbl">Acción</label>
                             <select id="tipo" class="input-field w-full font-bold">
-                                <option value="ENTRADA">Producción (+)</option>
-                                <option value="SALIDA">Venta/Salida (-)</option>
+                                <option value="ENTRADA">PRODUCCIÓN (+)</option>
+                                <option value="SOBRANTE">SOBRANTE (+)</option>
+                                <option value="SALIDA">VENTA/MERMA (-)</option>
                             </select>
                         </div>
                         <div class="w-1/2">
