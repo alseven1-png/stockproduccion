@@ -1,133 +1,21 @@
-Gemini
-EMPRESA
-
-Nueva conversación
-
-Descubrir Gems
-Reciente
-Debugging Page Errors and Missing Images
-Origen del Nombre "Inodoro"
-Listado de Productos para el Sistema
-Corregir Errores de Página Web
-Solucionar error "undefined (reading 'appId')"
-Revisión de código App ID
-Código HTML de Control de Mercadería
-Solución de Error en Configuración
-Apagar la máquina detiene procesos
-Corrección de nombres de archivos web
-Error 404: Soluciones y Causas
-Ayuda con Panadería App y GitHub
-Excel para Contabilidad de Panadería
-
-Configuración y ayuda
-Conversación con Gemini
-Fibra base Cómo hago para llegar a conseguir el código que veníamos pegando dentro del código para la habilitación no, no recuerdo los pasos y no lo estoy encontrando.
-
-¡Hola! No hay problema, es fácil perderse. El código de Firebase no siempre es intuitivo de encontrar.
-
-Aquí tienes los pasos exactos para conseguir el bloque firebaseConfig que necesitas pegar:
-
-🔑 Cómo Conseguir el Código de Configuración de Firebase
-Sigue estos pasos en tu computadora:
-
-Ir a la Consola: Abre tu navegador y ve a la Consola de Firebase.
-
-Seleccionar Proyecto: Haz clic en el proyecto que estamos usando para el control de mercadería (ej., mercaderia-f1699).
-
-Ir a Configuración: En el menú lateral izquierdo, haz clic en el engranaje (⚙️) junto a "Project overview" (Descripción general del proyecto). Esto te llevará a Configuración del proyecto.
-
-Localizar la Aplicación: Desplázate hacia abajo hasta la sección "Tus apps" (Your apps). Verás el ícono de una web (si no lo ves, es porque la app web no está registrada, pero debería estarlo).
-
-Elegir el Formato Correcto: Debajo del nombre de tu aplicación web, verás opciones para ver la configuración. Asegúrate de seleccionar la pestaña o botón que dice "Config" (Configuración) o "Configuración global".
-
-Copiar: Copia el bloque de código completo que comienza con const firebaseConfig = { ... }.
-
-Ese es el bloque que debes reemplazar en la parte superior del <script> de tu archivo HTML. ¿Pudiste encontrarlo?
-
-Bueno o algo salió malo, me estoy apurando demasiado, pero cuando hago la actualización de la página lo que me está mostrando ahora es solamente la parte principal donde dice panadería contra producción gestión de stock en tiempo real y el puntito verde, o sea que en línea está, así que el código fibra base Está bien cargado, pero después Solamente tengo una pantalla en blanco para abajo, no sé si me estoy apurando demasiado y le falta todavía correr el proceso de actualización, Porque todavía en la página de gits, me aparece de github, no me aparece todavía en Maine ese actualizando index.html Pero bueno por lo general ya me lo mostraba, quizás como esta es una actualización que tiene más componentes necesita y requiere Sí o sí que esté terminado hacer el proceso, no sé, pregunto, digo, supongo.
-
-¡Hola! No te estás apurando; tienes razón en que la página ya debería mostrar el contenido completo.
-
-El hecho de que el punto esté verde (Conectado) es una excelente noticia, ya que confirma que:
-
-Tu clave Firebase es correcta.
-
-El JavaScript base está corriendo.
-
-Si solo ves el encabezado y el punto verde, significa que el código JavaScript está chocando justo antes de dibujar la navegación (NAV) y las vistas principales (MAIN). Esto suele ser causado por un pequeño error de sintaxis al pegar el código (una llave o una coma de más o de menos) o un problema de caché/servidor.
-
-🔍 Pasos de Diagnóstico
-1. Descartar Caché y Servidor (Lo más fácil)
-Aunque el proceso de Git (GitHub) esté pendiente, tu navegador podría estar cargando una versión a medias.
-
-Fuerza una Recarga Completa: Presiona Ctrl + Shift + R (o Cmd + Shift + R en Mac). Esto vacía la caché y obliga al navegador a cargar el archivo HTML más reciente de tu hosting.
-
-Si esto funciona, significa que el problema era el lag de la subida.
-
-2. Verificar el Error de Código (La verdad absoluta)
-Si la recarga forzada no funciona, el problema es que el código tiene un error de sintaxis introducido en la última copia/pegado que hicimos (v9.0).
-
-Necesito el mensaje de error:
-
-Presiona F12 y abre la consola (pestaña Console).
-
-Busca el primer mensaje que aparezca en rojo (Uncaught SyntaxError o ReferenceError).
-
-Copia y pega aquí ese mensaje (o al menos las primeras dos líneas).
-
-Con ese error, podré indicarte la línea exacta donde se detuvo el código para que lo corrijas y podamos seguir.
-
-Tailwind CSS in production, install it as a PostCSS plugin or use the Tailwind CLI: https://tailwindcss.com/docs/installation
-
-(anonymous) @ (index):64Understand this warning
-
-stockproduccion/:62 Uncaught ReferenceError: establecerFechaInput is not defined
-
-    at HTMLDocument.<anonymous> (stockproduccion/:62:13)Understand this error
-
-favicon.ico:1  Failed to load resource: the server responded with a status of 404 ()Understand this error
-
-stockproduccion/:113 Error al cargar config general: TypeError: Cannot read properties of null (reading 'value')
-
-    at llenarSelectOperarios (stockproduccion/:148:32)
-
-    at procesarOperarios (stockproduccion/:141:13)
-
-    at cargarConfiguracionGeneral (stockproduccion/:110:17)
-
-    at async inicializarSistema (stockproduccion/:66:13)
-
-cargarConfiguracionGeneral @ stockproduccion/:113Understand this error
-
-stockproduccion/:67 Uncaught (in promise) ReferenceError: escucharMovimientos is not defined
-
-    at inicializarSistema (stockproduccion/:67:13)Understand this error
-
-Entendido. Este registro de errores es excelente. Muestra que la conexión a Firebase está bien (punto verde), pero el código JavaScript se está "muriendo" (crashing) al inicio, lo que impide que se dibujen las vistas y se llenen los desplegables.
-
-Los errores son típicos de una reorganización grande de código como la que hicimos (V9.0). El problema es de orden y alcance de las funciones.
-
-📝 Diagnóstico y Solución Unificada
-Error Clave	Causa	Solución
-Error 1 & 4: establecerFechaInput is not defined, escucharMovimientos is not defined	El código llama a estas funciones antes de que JavaScript haya terminado de leer y definirlas.	Reorganizar: Mover todas las funciones de utilidad y de manejo de eventos a la parte superior del código.
-Error 3: TypeError: Cannot read properties of null (reading 'value') en llenarSelectOperarios	El código está tratando de acceder a un elemento HTML (<select id="operario">) antes de que el navegador lo haya terminado de cargar o dibujar.	Null Check: Agregar una verificación de seguridad (if (!sel) return;) antes de intentar leer el valor.
-Para arreglar todo esto a la vez, vamos a hacer una última gran reorganización del bloque <script> para asegurar que todas las funciones se definan antes de ser llamadas.
-
-🛠️ Código Versión 10.0 (Estructura Corregida)
-Por favor, reemplaza el contenido completo de tu etiqueta <script> por el bloque de código de JavaScript que se muestra a continuación. Mantén el HTML (la parte del <body>) intacto.
-
-Nota: Tu clave de Firebase debe estar pegada en la parte superior, como siempre.
 
 JavaScript
     <script>
         // ============================================================
         // 1. CONFIGURACIÓN DE SEGURIDAD Y CLAVES (DEBE QUEDAR AQUÍ)
         // ============================================================
-        const CLAVE_ADMIN = "1234"; // 🔒 CAMBIA ESTO
+        const CLAVE_ADMIN = "2550LP"; // 🔒 CAMBIA ESTO
 
-        const firebaseConfig = {
-             // ... TUS CLAVES AQUI ...
-        };
+       const firebaseConfig = {
+  apiKey: "AIzaSyBKV1mVfhFZJgeZRu6FHgz-2_KVrKDlHoc",
+  authDomain: "mercaderia-f1699.firebaseapp.com",
+  projectId: "mercaderia-f1699",
+  storageBucket: "mercaderia-f1699.firebasestorage.app",
+  messagingSenderId: "230493635490",
+  appId: "1:230493635490:web:f4b780864dbc64eebda8fb"
+};
+            
+        
         // ============================================================
 
         firebase.initializeApp(firebaseConfig);
