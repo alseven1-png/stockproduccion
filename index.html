@@ -172,35 +172,37 @@
             }
         }
 
-        async function cargarConfiguracionGeneral() {
-            try {
-                productosGlobal = [];
-                for (const key in CATEGORIAS) {
-                    const docRef = db.collection(COLL_CONFIG).doc(`productos_${key}`);
-                    const docSnap = await docRef.get();
-                    
-                    let csv = getProductDefault(key);
-                    if (docSnap.exists) csv = docSnap.data().csv;
-                    else await docRef.set({ csv: csv });
-                    
-                    const configEl = document.getElementById(`config-${key}`);
-                    if(configEl) configEl.value = csv;
-                    productosGlobal.push(...procesarProductosCSV(csv, key));
-                }
+      // --- LÓGICA PRINCIPAL Y CONEXIÓN A DB ---
 
-                const docOp = await db.collection(COLL_CONFIG).doc("operarios_lista").get();
-                let txtOp = "Mañana\nTarde\nNoche";
-                if (docOp.exists) txtOp = docOp.data().lista;
-                else await db.collection(COLL_CONFIG).doc("operarios_lista").set({ lista: txtOp });
-
-                const opEl = document.getElementById('config-operarios');
-                if(opEl) opOp.value = txtOp;
-                procesarOperarios(txtOp);
-
-            } catch (e) {
-                console.error("Error al cargar config general:", e);
-            }
+async function cargarConfiguracionGeneral() {
+    try {
+        productosGlobal = [];
+        for (const key in CATEGORIAS) {
+            const docRef = db.collection(COLL_CONFIG).doc(`productos_${key}`);
+            const docSnap = await docRef.get();
+            
+            let csv = getProductDefault(key);
+            if (docSnap.exists) csv = docSnap.data().csv;
+            else await docRef.set({ csv: csv });
+            
+            const configEl = document.getElementById(`config-${key}`);
+            if(configEl) configEl.value = csv;
+            productosGlobal.push(...procesarProductosCSV(csv, key));
         }
+
+        const docOp = await db.collection(COLL_CONFIG).doc("operarios_lista").get();
+        let txtOp = "Mañana\nTarde\nNoche";
+        if (docOp.exists) txtOp = docOp.data().lista;
+        else await db.collection(COLL_CONFIG).doc("operarios_lista").set({ lista: txtOp });
+
+        const opEl = document.getElementById('config-operarios');
+        if(opEl) opEl.value = txtOp; // 🛠️ CORRECCIÓN: cambiamos 'opOp' por 'opEl'
+        procesarOperarios(txtOp); // Esta línea ahora se ejecuta correctamente
+
+    } catch (e) {
+        console.error("Error al cargar config general:", e);
+    }
+}
 
         // --- CÁLCULOS Y MANEJO DE MOVIMIENTOS ---
 
