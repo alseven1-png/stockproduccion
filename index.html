@@ -87,7 +87,7 @@
             return now.toISOString().slice(0,16);
         }
 
-        function establecerFechaInput() {
+        function establecerFechainput t() {
             const el = document.getElementById('fecha');
             if(el) el.value = obtenerFechaLocal();
         }
@@ -349,7 +349,7 @@
             }).then(() => {
                 alert(`Movimiento ${tipo} registrado`);
                 e.target.reset();
-                establecerFechaInput();
+                establecerFechainput t();
                 actualizarFormato(); 
                 document.getElementById('operario').value = operario; 
             }).catch((err) => {
@@ -593,7 +593,7 @@
                     inicializarSistema();
                 }
             });
-            establecerFechaInput();
+            establecerFechainput t();
         });
 
 
@@ -690,13 +690,13 @@
                 <form onsubmit="guardarMovimiento(event)" class="space-y-4">
                     <div>
                         <label class="lbl">Producto</label>
-                        <select id="producto" onchange="actualizarFormato()" required class="input-field w-full bg-gray-50"></select>
+                        <select id="producto" onchange="actualizarFormato()" required class="input t-field w-full bg-gray-50"></select>
                     </div>
 
                     <div class="flex gap-3">
                         <div class="w-1/2">
                             <label class="lbl">Acción</label>
-                            <select id="tipo" class="input-field w-full font-bold">
+                            <select id="tipo" class="input t-field w-full font-bold">
                                 <option value="ENTRADA">PRODUCCIÓN (+)</option>
                                 <option value="SOBRANTE">SOBRANTE (+)</option>
                                 <option value="SALIDA">VENTA/MERMA (-)</option>
@@ -704,13 +704,13 @@
                         </div>
                         <div class="w-1/2">
                             <label class="lbl">Formato</label>
-                            <select id="formato" class="input-field w-full bg-amber-50 border-amber-200 text-amber-900"><option value="manual_unidad">Unidad</option></select>
+                            <select id="formato" class="input typ-field w-full bg-amber-50 border-amber-200 text-amber-900"><option value="manual_unidad">Unidad</option></select>
                         </div>
                     </div>
 
                     <div>
                         <label class="lbl">Cantidad</label>
-                        <input type="number" id="cantidad" step="0.01" required class="input-field w-full text-center text-3xl font-bold text-amber-600 py-3" placeholder="0">
+                       <input type="number" id="cantidad" step="0.001" required class="input-field w-full text-center text-3xl font-bold text-amber-600 py-3" placeholder="0">
                     </div>
 
                     <div class="flex gap-3">
