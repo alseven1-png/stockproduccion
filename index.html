@@ -381,7 +381,22 @@
                 div.innerHTML = '<p class="text-center text-gray-400 p-4">No hay movimientos</p>';
                 return;
             }
+function getColorClase(tipo) {
+    if (tipo === 'ENTRADA') return 'text-green-600';
+    if (tipo === 'SOBRANTE') return 'text-blue-600'; 
+    return 'text-red-600';
+}
 
+function getSigno(tipo) {
+    if (tipo === 'SALIDA') return '-';
+    return '+';
+}
+
+function getAbrev(tipo) {
+    if (tipo === 'ENTRADA') return 'PROD';
+    if (tipo === 'SALIDA') return 'VENTA';
+    return 'SOB';
+}
             // MODO CRONOLÓGICO (Tabla)
             // ... (HTML de la tabla cronológica) ...
 
