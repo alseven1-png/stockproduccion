@@ -18,8 +18,8 @@
         // 1. CONFIGURACIÓN DE SEGURIDAD Y CLAVES
         // ============================================================
         const CLAVE_ADMIN = "2550LP"; // 🔒 CAMBIA ESTO
-      
-        const firebaseConfig = {
+
+       const firebaseConfig = {
   apiKey: "AIzaSyBKV1mVfhFZJgeZRu6FHgz-2_KVrKDlHoc",
   authDomain: "mercaderia-f1699.firebaseapp.com",
   projectId: "mercaderia-f1699",
@@ -27,7 +27,6 @@
   messagingSenderId: "230493635490",
   appId: "1:230493635490:web:f4b780864dbc64eebda8fb"
 };
-       
         // ============================================================
 
         firebase.initializeApp(firebaseConfig);
@@ -87,7 +86,7 @@
             return now.toISOString().slice(0,16);
         }
 
-        function establecerFechainput t() {
+        function establecerFechaInput() {
             const el = document.getElementById('fecha');
             if(el) el.value = obtenerFechaLocal();
         }
@@ -237,7 +236,7 @@
                         if (!produccionDiariaMap[m.productoId]) produccionDiariaMap[m.productoId] = 0;
                         produccionDiariaMap[m.productoId] += Math.abs(m.cantidadBase);
                     } else if (m.tipo === 'SOBRANTE') {
-                         if (!sobranteDiarioMap[m.productoId]) sobranteDiariaMap[m.productoId] = 0;
+                         if (!sobranteDiariaMap[m.productoId]) sobranteDiariaMap[m.productoId] = 0;
                          sobranteDiariaMap[m.productoId] += Math.abs(m.cantidadBase);
                     }
                 }
@@ -256,7 +255,7 @@
             
             productosGlobal.forEach(p => {
                 const prod = produccionDiariaMap[p.id] || 0;
-                const sob = sobranteDiarioMap[p.id] || 0;
+                const sob = sobranteDiariaMap[p.id] || 0;
                 
                 if (prod > 0 || sob > 0) {
                     hayDatosHoy = true;
@@ -349,7 +348,7 @@
             }).then(() => {
                 alert(`Movimiento ${tipo} registrado`);
                 e.target.reset();
-                establecerFechainput t();
+                establecerFechaInput();
                 actualizarFormato(); 
                 document.getElementById('operario').value = operario; 
             }).catch((err) => {
@@ -482,7 +481,6 @@
             }
         }
 
-        // **ESTA FUNCIÓN ERA LA QUE FALTABA**
         window.cambiarVista = function(id) {
             const configBtn = document.getElementById('btn-vista-config');
             const historialBtn = document.getElementById('btn-vista-historial');
@@ -593,7 +591,7 @@
                     inicializarSistema();
                 }
             });
-            establecerFechainput t();
+            establecerFechaInput();
         });
 
 
@@ -678,58 +676,58 @@
         </div>
 
         <div id="vista-carga" class="vista hidden container mx-auto max-w-md">
-    <div class="bg-white p-5 rounded-lg shadow-lg border-t-4 border-amber-500 space-y-5">
-        <h2 class="text-lg font-bold text-gray-800 text-center border-b pb-2">Nueva Carga</h2>
-        
-        <div class="flex justify-between bg-gray-100 p-2 rounded-lg gap-2">
-            <button id="btn-cat-panaderia" onclick="filtrarProductos('panaderia')" class="cat-btn flex-1 py-2 px-1 text-xs font-bold rounded-md transition hover:bg-amber-100">Panadería</button>
-            <button id="btn-cat-pasteleria" onclick="filtrarProductos('pasteleria')" class="cat-btn flex-1 py-2 px-1 text-xs font-bold rounded-md transition hover:bg-amber-100">Pastelería</button>
-            <button id="btn-cat-cocina" onclick="filtrarProductos('cocina')" class="cat-btn flex-1 py-2 px-1 text-xs font-bold rounded-md transition hover:bg-amber-100">Cocina</button>
+            <div class="bg-white p-5 rounded-lg shadow-lg border-t-4 border-amber-500 space-y-5">
+                <h2 class="text-lg font-bold text-gray-800 text-center border-b pb-2">Nueva Carga</h2>
+                
+                <div class="flex justify-between bg-gray-100 p-2 rounded-lg gap-2">
+                    <button id="btn-cat-panaderia" onclick="filtrarProductos('panaderia')" class="cat-btn flex-1 py-2 px-1 text-xs font-bold rounded-md transition hover:bg-amber-100">Panadería</button>
+                    <button id="btn-cat-pasteleria" onclick="filtrarProductos('pasteleria')" class="cat-btn flex-1 py-2 px-1 text-xs font-bold rounded-md transition hover:bg-amber-100">Pastelería</button>
+                    <button id="btn-cat-cocina" onclick="filtrarProductos('cocina')" class="cat-btn flex-1 py-2 px-1 text-xs font-bold rounded-md transition hover:bg-amber-100">Cocina</button>
+                </div>
+                
+                <form onsubmit="guardarMovimiento(event)" class="space-y-4">
+                    <div>
+                        <label class="lbl">Producto</label>
+                        <select id="producto" onchange="actualizarFormato()" required class="input-field w-full bg-gray-50"></select>
+                    </div>
+
+                    <div class="flex gap-3">
+                        <div class="w-1/2">
+                            <label class="lbl">Acción</label>
+                            <select id="tipo" class="input-field w-full font-bold">
+                                <option value="ENTRADA">PRODUCCIÓN (+)</option>
+                                <option value="SOBRANTE">SOBRANTE (+)</option>
+                                <option value="SALIDA">VENTA/MERMA (-)</option>
+                            </select>
+                        </div>
+                        <div class="w-1/2">
+                            <label class="lbl">Formato</label>
+                            <select id="formato" class="input-field w-full bg-amber-50 border-amber-200 text-amber-900"><option value="manual_unidad">Unidad</option></select>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="lbl">Cantidad</label>
+                        <input type="number" id="cantidad" step="0.001" required class="input-field w-full text-center text-3xl font-bold text-amber-600 py-3" placeholder="0">
+                    </div>
+
+                    <div class="flex gap-3">
+                        <div class="w-1/2">
+                            <label class="lbl">Operario</label>
+                            <select id="operario" class="input-field w-full"></select>
+                        </div>
+                        <div class="w-1/2">
+                            <label class="lbl">Fecha</label>
+                            <input type="datetime-local" id="fecha" required class="input-field w-full text-xs">
+                        </div>
+                    </div>
+
+                    <button type="submit" class="w-full bg-amber-600 text-white py-4 rounded-lg font-bold shadow-lg hover:bg-amber-700 transition active:scale-95 mt-2">
+                        CONFIRMAR CARGA
+                    </button>
+                </form>
+            </div>
         </div>
-        
-        <form onsubmit="guardarMovimiento(event)" class="space-y-4">
-            <div>
-                <label class="lbl">Producto</label>
-                <select id="producto" onchange="actualizarFormato()" required class="input-field w-full bg-gray-50"></select>
-            </div>
-
-            <div class="flex gap-3">
-                <div class="w-1/2">
-                    <label class="lbl">Acción</label>
-                    <select id="tipo" class="input-field w-full font-bold">
-                        <option value="ENTRADA">PRODUCCIÓN (+)</option>
-                        <option value="SOBRANTE">SOBRANTE (+)</option>
-                        <option value="SALIDA">VENTA/MERMA (-)</option>
-                    </select>
-                </div>
-                <div class="w-1/2">
-                    <label class="lbl">Formato</label>
-                    <select id="formato" class="input-field w-full bg-amber-50 border-amber-200 text-amber-900"><option value="manual_unidad">Unidad</option></select>
-                </div>
-            </div>
-
-            <div>
-                <label class="lbl">Cantidad</label>
-                <input type="number" id="cantidad" step="0.001" required class="input-field w-full text-center text-3xl font-bold text-amber-600 py-3" placeholder="0">
-            </div>
-
-            <div class="flex gap-3">
-                <div class="w-1/2">
-                    <label class="lbl">Operario</label>
-                    <select id="operario" class="input-field w-full"></select>
-                </div>
-                <div class="w-1/2">
-                    <label class="lbl">Fecha</label>
-                    <input type="datetime-local" id="fecha" required class="input-field w-full text-xs">
-                </div>
-            </div>
-
-            <button type="submit" class="w-full bg-amber-600 text-white py-4 rounded-lg font-bold shadow-lg hover:bg-amber-700 transition active:scale-95 mt-2">
-                CONFIRMAR CARGA
-            </button>
-        </form>
-    </div>
-</div>
 
         <div id="vista-historial" class="vista hidden container mx-auto max-w-4xl">
             <div class="flex justify-between items-center mb-2">
