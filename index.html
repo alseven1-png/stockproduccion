@@ -17,10 +17,8 @@
         // ============================================================
         // 1. CONFIGURACIÓN DE SEGURIDAD Y CLAVES
         // ============================================================
-        const CLAVE_ADMIN = "2550LP"; // 🔒 Revisa que esté bien escrita
-
-        
-    
+        const CLAVE_ADMIN = "2550LP"; // 🔒 CAMBIA ESTO
+      
         const firebaseConfig = {
   apiKey: "AIzaSyBKV1mVfhFZJgeZRu6FHgz-2_KVrKDlHoc",
   authDomain: "mercaderia-f1699.firebaseapp.com",
@@ -29,8 +27,8 @@
   messagingSenderId: "230493635490",
   appId: "1:230493635490:web:f4b780864dbc64eebda8fb"
 };
-        //========================================================
-        
+       
+        // ============================================================
 
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
@@ -45,7 +43,41 @@
         const COLL_MOVIMIENTOS = "movimientos"; 
         const COLL_CONFIG = "configuracion";
         const CATEGORIAS = { panaderia: 'Producción Panadería', pasteleria: 'Producción Pastelería', cocina: 'Producción Cocina' };
+        
+        // --- GRÁFICOS ---
+        let chartInstance = null;
+        
+        function actualizarGraficos(dataMap) {
+            const canvas = document.getElementById('graficoProduccion');
+            if (!canvas) return; 
+            
+            const labels = Object.keys(dataMap);
+            const dataValues = Object.values(dataMap);
 
+            if (chartInstance) { chartInstance.destroy(); }
+
+            chartInstance = new Chart(canvas, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Producción Histórica (Unidades Base)',
+                        data: dataValues,
+                        backgroundColor: 'rgba(217, 119, 6, 0.7)',
+                        borderColor: 'rgba(217, 119, 6, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { beginAtZero: true }
+                    },
+                    plugins: { legend: { display: false } }
+                }
+            });
+        }
 
         // --- FUNCIONES DE UTILIDAD Y CONFIGURACIÓN ---
 
@@ -87,6 +119,8 @@
             llenarSelectOperarios();
         }
 
+        // --- MANEJO DE VISTAS Y DESPLEGABLES ---
+        
         function llenarSelectOperarios() {
             const sel = document.getElementById('operario');
             if (!sel) return; 
@@ -141,6 +175,8 @@
             }
         }
 
+        // --- LÓGICA PRINCIPAL Y CONEXIÓN A DB ---
+        
         async function cargarConfiguracionGeneral() {
             try {
                 productosGlobal = [];
@@ -152,7 +188,8 @@
                     if (docSnap.exists) csv = docSnap.data().csv;
                     else await docRef.set({ csv: csv });
                     
-                    document.getElementById(`config-${key}`).value = csv;
+                    const configEl = document.getElementById(`config-${key}`);
+                    if(configEl) configEl.value = csv;
                     productosGlobal.push(...procesarProductosCSV(csv, key));
                 }
 
@@ -161,7 +198,8 @@
                 if (docOp.exists) txtOp = docOp.data().lista;
                 else await db.collection(COLL_CONFIG).doc("operarios_lista").set({ lista: txtOp });
 
-                document.getElementById('config-operarios').value = txtOp;
+                const opEl = document.getElementById('config-operarios');
+                if(opEl) opEl.value = txtOp;
                 procesarOperarios(txtOp);
 
             } catch (e) {
@@ -169,8 +207,6 @@
             }
         }
 
-        // --- MANEJO DE VISTAS Y MOVIMIENTOS ---
-        
         function escucharMovimientos() {
             db.collection(COLL_MOVIMIENTOS).orderBy("timestamp", "desc").onSnapshot((snapshot) => {
                 movimientosGlobal = [];
@@ -201,7 +237,7 @@
                         if (!produccionDiariaMap[m.productoId]) produccionDiariaMap[m.productoId] = 0;
                         produccionDiariaMap[m.productoId] += Math.abs(m.cantidadBase);
                     } else if (m.tipo === 'SOBRANTE') {
-                         if (!sobranteDiariaMap[m.productoId]) sobranteDiariaMap[m.productoId] = 0;
+                         if (!sobranteDiarioMap[m.productoId]) sobranteDiariaMap[m.productoId] = 0;
                          sobranteDiariaMap[m.productoId] += Math.abs(m.cantidadBase);
                     }
                 }
@@ -214,6 +250,7 @@
 
             // 1. Renderizar Tabla "Reconciliación Diaria"
             const tbodyHoy = document.getElementById('tabla-produccion-hoy');
+            if (!tbodyHoy) return;
             tbodyHoy.innerHTML = '';
             let hayDatosHoy = false;
             
@@ -245,6 +282,7 @@
 
             // 2. Renderizar Tarjetas de Stock General (Depósito)
             const grid = document.getElementById('grid-stock');
+            if (!grid) return;
             grid.innerHTML = '';
             let alertaStock = 0;
 
@@ -266,7 +304,8 @@
                 `;
             });
 
-            document.getElementById('kpi-alertas').innerText = alertaStock;
+            const kpiAlerta = document.getElementById('kpi-alertas');
+            if(kpiAlerta) kpiAlerta.innerText = alertaStock;
             
             // 3. Actualizar Gráficos
             actualizarGraficos(produccionHistoricaMap);
@@ -289,6 +328,7 @@
             const fecha = document.getElementById('fecha').value;
 
             if(!prod) return alert("Producto no válido.");
+            if(isNaN(cantidad) || cantidad <= 0) return alert("Cantidad debe ser un número positivo.");
 
             let cantBase = cantidad;
             let formatoTexto = '';
@@ -320,15 +360,246 @@
             });
         }
         
-        // --- (Resto de las funciones de Vistas, Seguridad, Historial, etc.) ---
+        // --- HISTORIAL Y CORRECCIÓN DE ERRORES (ADMIN) ---
+
+        let modoHistorial = 'cronologico'; 
         
-        // (Las funciones de Vistas, Seguridad, Historial y Gráficos se incluyen completas en la versión final)
+        window.toggleModoHistorial = function() {
+            modoHistorial = modoHistorial === 'cronologico' ? 'agrupado' : 'cronologico';
+            const btn = document.getElementById('btn-toggle-historial');
+            if(btn) btn.innerHTML = modoHistorial === 'cronologico' ? '<i class="fas fa-layer-group mr-1"></i> Agrupar por Producto' : '<i class="fas fa-list-ol mr-1"></i> Ver Cronológico';
+            actualizarHistorialVisual();
+        }
+
+        function getColorClase(tipo) {
+            if (tipo === 'ENTRADA') return 'text-green-600';
+            if (tipo === 'SOBRANTE') return 'text-blue-600'; 
+            return 'text-red-600';
+        }
+
+        function getSigno(tipo) {
+            if (tipo === 'SALIDA') return '-';
+            return '+';
+        }
+
+        function getAbrev(tipo) {
+            if (tipo === 'ENTRADA') return 'PROD';
+            if (tipo === 'SALIDA') return 'VENTA';
+            return 'SOB';
+        }
+
+        function actualizarHistorialVisual() {
+            const div = document.getElementById('contenedor-historial');
+            if (!div) return;
+            div.innerHTML = '';
+
+            if (movimientosGlobal.length === 0) {
+                div.innerHTML = '<p class="text-center text-gray-400 p-4">No hay movimientos</p>';
+                return;
+            }
+
+            // MODO CRONOLÓGICO (Tabla)
+            if (modoHistorial === 'cronologico') {
+                let html = `<table class="w-full text-sm"><thead class="bg-gray-100 text-gray-500"><tr><th class="p-2 text-left">Hora</th><th class="p-2 text-left">Producto</th><th class="p-2 text-center">Tipo</th><th class="p-2 text-right">Cant</th><th class="p-2 text-right">Op</th><th class="p-2 text-right"></th></tr></thead><tbody>`;
+                movimientosGlobal.slice(0, 100).forEach(m => {
+                    const hora = m.fecha.slice(11,16);
+                    const dia = m.fecha.slice(8,10); 
+                    const color = getColorClase(m.tipo);
+                    const abrev = getAbrev(m.tipo);
+                    const deleteBtn = isAdminUnlocked ? `<button onclick="eliminarMovimiento('${m.id}')" class="text-red-400 hover:text-red-600 transition"><i class="fas fa-trash-alt"></i></button>` : '';
+
+                    html += `<tr class="border-b hover:bg-gray-50">
+                        <td class="p-2 text-gray-500 text-xs">${dia} ${hora}</td>
+                        <td class="p-2 font-medium">${m.productoNombre}</td>
+                        <td class="p-2 text-center text-xs font-bold"><span class="bg-gray-200 px-1 rounded-full text-gray-600">${abrev}</span></td>
+                        <td class="p-2 text-right font-bold ${color}">${getSigno(m.tipo)}${Math.abs(m.cantidadOriginal)} ${m.formatoUsado}</td>
+                         <td class="p-2 text-right text-xs text-gray-500">${m.operario}</td>
+                         <td class="p-2 text-right w-10">${deleteBtn}</td>
+                    </tr>`;
+                });
+                html += '</tbody></table>';
+                div.innerHTML = html;
+
+            } 
+            // MODO AGRUPADO (Cards)
+            else {
+                const agrupado = {};
+                movimientosGlobal.forEach(m => {
+                    if (!agrupado[m.productoNombre]) agrupado[m.productoNombre] = [];
+                    agrupado[m.productoNombre].push(m);
+                });
+
+                Object.keys(agrupado).sort().forEach(prod => {
+                    let itemsHtml = '';
+                    agrupado[prod].forEach(m => {
+                         const color = getColorClase(m.tipo);
+                         const deleteBtn = isAdminUnlocked ? `<button onclick="eliminarMovimiento('${m.id}')" class="text-red-400 hover:text-red-600 transition ml-2"><i class="fas fa-trash-alt"></i></button>` : '';
+                         
+                         itemsHtml += `<div class="flex justify-between text-xs border-b border-gray-100 py-1">
+                            <span class="text-gray-500">${m.fecha.slice(8,10)}/${m.fecha.slice(5,7)} ${m.fecha.slice(11,16)} - ${m.operario}</span>
+                            <span class="font-bold ${color}">${getSigno(m.tipo)}${Math.abs(m.cantidadOriginal)} ${m.formatoUsado} (${getAbrev(m.tipo)})${deleteBtn}</span>
+                         </div>`;
+                    });
+
+                    div.innerHTML += `
+                        <div class="bg-white border rounded mb-2 overflow-hidden shadow-sm">
+                            <div class="bg-amber-50 p-2 font-bold text-amber-900 flex justify-between">
+                                <span>${prod}</span>
+                                <span class="text-xs bg-amber-200 px-2 rounded-full pt-1">${agrupado[prod].length} movs</span>
+                            </div>
+                            <div class="p-2 bg-white">
+                                ${itemsHtml}
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+        }
         
-        // --- (El resto de las funciones necesarias para la versión final V12.0) ---
+        window.eliminarMovimiento = async function(id) {
+            if (!isAdminUnlocked) return alert("Acceso denegado. Desbloquee el modo Admin en Configuración.");
+            if (!confirm("⚠️ ¿Desea eliminar ESTE movimiento histórico? Esto corregirá su stock general. Esta acción no se puede deshacer.")) return;
+
+            try {
+                await db.collection(COLL_MOVIMIENTOS).doc(id).delete();
+                alert("Movimiento eliminado correctamente. Su stock se ha corregido. Recargando historial.");
+            } catch (error) {
+                alert("Error al eliminar movimiento: " + error.message);
+            }
+        }
+        
+        // --- SEGURIDAD Y CONFIGURACIÓN ---
+
+        function verificarAdmin() {
+            if (isAdminUnlocked) return true;
+            const pass = prompt("🔒 ACCESO RESTRINGIDO\nIngrese la contraseña de Administrador:");
+            if (pass === CLAVE_ADMIN) {
+                isAdminUnlocked = true;
+                return true;
+            } else {
+                alert("Contraseña incorrecta.");
+                return false;
+            }
+        }
+
+        // **ESTA FUNCIÓN ERA LA QUE FALTABA**
+        window.cambiarVista = function(id) {
+            const configBtn = document.getElementById('btn-vista-config');
+            const historialBtn = document.getElementById('btn-vista-historial');
+
+            if (id === 'vista-config' || id === 'vista-historial') {
+                if (id === 'vista-config') {
+                    if (!verificarAdmin()) return; 
+                }
+
+                if (isAdminUnlocked) {
+                    configBtn.innerHTML = '<i class="fas fa-unlock block mb-1"></i>Admin';
+                    historialBtn.classList.add('admin-unlocked');
+                } else {
+                    configBtn.innerHTML = '<i class="fas fa-lock block mb-1"></i>Config';
+                    historialBtn.classList.remove('admin-unlocked');
+                }
+            }
+            
+            document.querySelectorAll('.vista').forEach(d => d.classList.add('hidden'));
+            const vista = document.getElementById(id);
+            if (vista) vista.classList.remove('hidden');
+            
+            document.querySelectorAll('.nav-btn').forEach(b => {
+                b.classList.remove('border-amber-300', 'text-white', 'font-bold');
+                b.classList.add('border-transparent', 'text-amber-100');
+            });
+            const btn = document.getElementById('btn-' + id);
+            if(btn) {
+                 btn.classList.add('border-amber-300', 'text-white', 'font-bold');
+                 btn.classList.remove('border-transparent', 'text-amber-100');
+            }
+            
+            if (id === 'vista-carga') {
+                // Asegura que la primera categoría se cargue al entrar a la vista
+                filtrarProductos('panaderia'); 
+            }
+        }
+
+        window.guardarConfiguracion = async function() {
+            if (!verificarAdmin()) return; 
+
+            try {
+                 for (const key in CATEGORIAS) {
+                    const csv = document.getElementById(`config-${key}`).value;
+                    await db.collection(COLL_CONFIG).doc(`productos_${key}`).set({ csv: csv });
+                 }
+
+                const nuevosOps = document.getElementById('config-operarios').value;
+                await db.collection(COLL_CONFIG).doc("operarios_lista").set({ lista: nuevosOps });
+                
+                await cargarConfiguracionGeneral(); 
+                alert("Configuración guardada correctamente. Productos y operarios actualizados.");
+            } catch(e) { alert("Error al guardar config: " + e.message); }
+        }
+        
+        window.limpiarBaseDeDatos = async function() {
+            if (!verificarAdmin()) return;
+             if (!confirm("⚠️ ¿Está absolutamente SEGURO de querer BORRAR TODA la base de datos de movimientos? Esta acción no se puede revertir.")) return;
+            
+             try {
+                // Borrar todos los documentos de movimientos (esto puede llevar un tiempo)
+                const movimientos = await db.collection(COLL_MOVIMIENTOS).get();
+                const batch = db.batch();
+                movimientos.docs.forEach(doc => {
+                    batch.delete(doc.ref);
+                });
+                await batch.commit();
+
+                // Resetear stock inicial a 0 en la configuración
+                for (const key in CATEGORIAS) {
+                    let csv = getProductDefault(key);
+                    // Modificar el CSV para que el stock inicial sea 0 en todas las líneas
+                    csv = csv.split('\n').map(line => {
+                        const parts = line.split('|');
+                        if (parts.length === 5) {
+                            parts[4] = '0'; // Pone el Stock a 0
+                        }
+                        return parts.join(' | ');
+                    }).join('\n');
+                    await db.collection(COLL_CONFIG).doc(`productos_${key}`).update({ csv: csv });
+                }
+
+                alert("Base de datos limpia y stock reiniciado a 0. Recargue la página.");
+                window.location.reload();
+
+             } catch (e) {
+                alert("Error grave al limpiar DB: " + e.message);
+             }
+        }
+
+
+        // --- INICIALIZACIÓN ---
+        
+        async function inicializarSistema() {
+            await cargarConfiguracionGeneral();
+            escucharMovimientos(); 
+            cambiarVista('vista-panel'); // Iniciar siempre en el panel de resumen
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            auth.signInAnonymously().catch(e => console.error("Error conexión: ", e));
+            auth.onAuthStateChanged((user) => {
+                if (user) {
+                    currentUser = user;
+                    // Se conectó correctamente, cambiamos el icono de estado
+                    const statusIcon = document.getElementById('status-icon');
+                    if(statusIcon) statusIcon.classList.replace('text-red-500', 'text-green-400');
+                    inicializarSistema();
+                }
+            });
+            establecerFechaInput();
+        });
+
 
     </script>
-    
-    <body class="bg-gray-100 h-screen flex flex-col overflow-hidden text-gray-800 font-sans">
+</head>
+<body class="bg-gray-100 h-screen flex flex-col overflow-hidden text-gray-800 font-sans">
 
     <header class="bg-amber-700 text-white shadow-md flex-none z-20">
         <div class="container mx-auto px-4 py-3 flex justify-between items-center">
@@ -411,7 +682,7 @@
                 <h2 class="text-lg font-bold text-gray-800 text-center border-b pb-2">Nueva Carga</h2>
                 
                 <div class="flex justify-between bg-gray-100 p-2 rounded-lg gap-2">
-                    <button id="btn-cat-panaderia" onclick="filtrarProductos('panaderia')" class="cat-btn flex-1 py-2 px-1 text-xs font-bold rounded-md transition bg-amber-600 text-white shadow">Panadería</button>
+                    <button id="btn-cat-panaderia" onclick="filtrarProductos('panaderia')" class="cat-btn flex-1 py-2 px-1 text-xs font-bold rounded-md transition hover:bg-amber-100">Panadería</button>
                     <button id="btn-cat-pasteleria" onclick="filtrarProductos('pasteleria')" class="cat-btn flex-1 py-2 px-1 text-xs font-bold rounded-md transition hover:bg-amber-100">Pastelería</button>
                     <button id="btn-cat-cocina" onclick="filtrarProductos('cocina')" class="cat-btn flex-1 py-2 px-1 text-xs font-bold rounded-md transition hover:bg-amber-100">Cocina</button>
                 </div>
