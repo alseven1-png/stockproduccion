@@ -74,12 +74,10 @@
         }
         
         function procesarProductosCSV(csvText, categoria) {
-            // CORRECCIÓN IMPORTANTE: Volvimos a usar el ID simple (i) en lugar de (00i)
-            // Esto arreglará la conexión con tus datos viejos.
             return csvText.split('\n').map(l => l.trim()).filter(l => l.length > 0).map((l, i) => {
                 const p = l.split('|').map(s => s.trim());
                 return { 
-                    id: `${categoria}_${i}`, // SIN padStart para compatibilidad histórica
+                    id: `${categoria}_${i}`, // ID Compatible con historial viejo
                     categoria: categoria,
                     nombre: p[0], 
                     unidad: p[1] || 'Unidad', 
@@ -133,7 +131,6 @@
             db.collection(COLL_MOVIMIENTOS).orderBy("timestamp", "desc").onSnapshot((snapshot) => {
                 movimientosGlobal = [];
                 snapshot.forEach((doc) => movimientosGlobal.push({ id: doc.id, ...doc.data() }));
-                // Forzamos actualización visual al recibir datos
                 actualizarPanelPrincipal();
                 actualizarHistorialVisual(); 
             });
@@ -153,20 +150,23 @@
             
             let totalProd = 0, totalDesc = 0;
 
-            // Procesamiento de datos con validación de existencia
             [...movimientosGlobal].reverse().forEach(m => {
-                // Si el producto fue borrado de config pero existe en historial, evitamos error
                 if (stockMap[m.productoId] !== undefined) {
+                    // Cálculo de Stock
                     if(m.tipo === 'ENTRADA') stockMap[m.productoId] += Math.abs(m.cantidadBase);
                     else stockMap[m.productoId] -= Math.abs(m.cantidadBase);
 
+                    // Filtrado por Fecha para Reporte
                     if (m.fecha.startsWith(fechaSeleccionada)) {
                         const cant = Math.abs(m.cantidadBase);
+                        
                         if (m.tipo === 'ENTRADA') { 
                             produccionDia[m.productoId] = (produccionDia[m.productoId] || 0) + cant;
                             totalProd += cant;
                         } 
-                        else if (m.tipo === 'DESCARTE') { 
+                        // **CORRECCIÓN CLAVE:**
+                        // Si es DESCARTE (nuevo) O es SOBRANTE (viejo), lo sumamos a la columna DESCARTE
+                        else if (m.tipo === 'DESCARTE' || m.tipo === 'SOBRANTE') { 
                             descarteDia[m.productoId] = (descarteDia[m.productoId] || 0) + cant;
                             totalDesc += cant;
                         }
@@ -208,6 +208,7 @@
                     
                     if (prod > 0 || desc > 0 || reut > 0) {
                         hayDatos = true;
+                        // Venta = Prod - (Reutilizacion + Descarte)
                         const ventaEst = prod - reut - desc;
                         tbody.innerHTML += `
                             <tr class="border-b border-gray-100 hover:bg-gray-50 text-xs sm:text-sm">
@@ -414,12 +415,12 @@
                         const hora = m.fecha.slice(11,16);
                         let color = 'text-gray-600', etiqueta = '';
                         if(m.tipo === 'ENTRADA') { color = 'text-green-600'; etiqueta="PROD"; }
-                        else if(m.tipo === 'DESCARTE') { color = 'text-red-600'; etiqueta="DESC"; }
+                        else if(m.tipo === 'DESCARTE' || m.tipo === 'SOBRANTE') { color = 'text-red-600'; etiqueta="DESC"; }
                         else if(m.tipo === 'REUTILIZACION') { color = 'text-orange-500'; etiqueta="REUT"; }
                         else { color = 'text-blue-600'; etiqueta="VENTA"; }
 
-                        // Aquí está el botón de borrar. Se mostrará si isAdminUnlocked es true
-                        const btnDel = isAdminUnlocked ? `<button onclick="eliminarMovimiento('${m.id}')" class="text-red-300 ml-2"><i class="fas fa-times"></i></button>` : '';
+                        // Corrección: Mismo tachito para todos
+                        const btnDel = isAdminUnlocked ? `<button onclick="eliminarMovimiento('${m.id}')" class="text-red-400 hover:text-red-600 ml-2"><i class="fas fa-trash-alt"></i></button>` : '';
 
                         html += `
                             <div class="p-2 flex justify-between items-center hover:bg-gray-50">
@@ -455,12 +456,12 @@
                         movs.forEach(m => {
                              let color = 'text-gray-600';
                              if(m.tipo === 'ENTRADA') color = 'text-green-600';
-                             else if(m.tipo === 'DESCARTE') color = 'text-red-600';
+                             else if(m.tipo === 'DESCARTE' || m.tipo === 'SOBRANTE') color = 'text-red-600';
                              else if(m.tipo === 'REUTILIZACION') color = 'text-orange-500';
                              
                              const fechaFmt = `${m.fecha.slice(8,10)}/${m.fecha.slice(5,7)} ${m.fecha.slice(11,16)}`;
-                             // Botón de borrar aquí también
-                             const btnDel = isAdminUnlocked ? `<button onclick="eliminarMovimiento('${m.id}')" class="text-red-300 ml-2"><i class="fas fa-trash-alt"></i></button>` : '';
+                             // Corrección: Mismo tachito para todos
+                             const btnDel = isAdminUnlocked ? `<button onclick="eliminarMovimiento('${m.id}')" class="text-red-400 hover:text-red-600 ml-2"><i class="fas fa-trash-alt"></i></button>` : '';
                              
                              itemsHtml += `<div class="flex justify-between text-xs border-b border-gray-100 py-1 px-2">
                                 <span class="text-gray-500">${fechaFmt} - ${m.operario}</span>
@@ -512,7 +513,7 @@
             
             if(id === 'vista-panel') actualizarPanelPrincipal(); 
             if(id === 'vista-carga') filtrarProductos('panaderia'); 
-            if(id === 'vista-historial') actualizarHistorialVisual(); // Refrescar historial
+            if(id === 'vista-historial') actualizarHistorialVisual(); 
         }
         
         window.guardarConfiguracion = async function() {
@@ -676,7 +677,7 @@
                     </div>
                     <div>
                         <label class="block text-[10px] font-bold text-gray-400 uppercase">Cantidad</label>
-                        <input type="number" id="cantidad" step="0.01" required class="w-full text-center text-3xl font-bold text-amber-600 border rounded py-2 outline-none" placeholder="0">
+                        <input type="number" id="cantidad" step="0.001" required class="w-full text-center text-3xl font-bold text-amber-600 border rounded py-2 outline-none" placeholder="0">
                     </div>
                     <div class="flex gap-2">
                         <div class="w-1/2">
