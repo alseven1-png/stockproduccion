@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Panadería Control de Producción</title>
+    <title>Control de Producción y Stock</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -15,94 +15,74 @@
 
     <script>
         // ============================================================
-        // 1. CONFIGURACIÓN DE SEGURIDAD Y CLAVES
+        // 1. CONFIGURACIÓN
         // ============================================================
-        const CLAVE_ADMIN = "2550LP"; // 🔒 CAMBIA ESTO
-        const firebaseConfig = {
-  apiKey: "AIzaSyBKV1mVfhFZJgeZRu6FHgz-2_KVrKDlHoc",
-  authDomain: "mercaderia-f1699.firebaseapp.com",
-  projectId: "mercaderia-f1699",
-  storageBucket: "mercaderia-f1699.firebasestorage.app",
-  messagingSenderId: "230493635490",
-  appId: "1:230493635490:web:f4b780864dbc64eebda8fb"
-};
+        const CLAVE_ADMIN = "2550LP"; 
         
-        // ============================================================
-
+        const firebaseConfig = {
+            apiKey: "AIzaSyBKV1mVfhFZJgeZRu6FHgz-2_KVrKDlHoc",
+            authDomain: "mercaderia-f1699.firebaseapp.com",
+            projectId: "mercaderia-f1699",
+            storageBucket: "mercaderia-f1699.firebasestorage.app",
+            messagingSenderId: "230493635490",
+            appId: "1:230493635490:web:f4b780864dbc64eebda8fb"
+        };
+        
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
         const auth = firebase.auth();
         
+        // VARIABLES GLOBALES
         let currentUser = null;
         let productosGlobal = []; 
         let operariosGlobal = [];
         let movimientosGlobal = []; 
         let isAdminUnlocked = false; 
+        let modoHistorial = 'cronologico'; // 'cronologico' o 'agrupado'
         
         const COLL_MOVIMIENTOS = "movimientos"; 
         const COLL_CONFIG = "configuracion";
-        const CATEGORIAS = { panaderia: 'Producción Panadería', pasteleria: 'Producción Pastelería', cocina: 'Producción Cocina' };
+        // Orden de categorías para respetar la carga
+        const ORDEN_CATEGORIAS = ['panaderia', 'pasteleria', 'cocina'];
+        const CATEGORIAS_NOMBRES = { panaderia: 'Panadería', pasteleria: 'Pastelería', cocina: 'Cocina' };
         
-        // --- GRÁFICOS ---
-        let chartInstance = null;
+        // --- UTILIDADES DE FECHA ---
         
-        function actualizarGraficos(dataMap) {
-            const canvas = document.getElementById('graficoProduccion');
-            if (!canvas) return; 
-            
-            const labels = Object.keys(dataMap);
-            const dataValues = Object.values(dataMap);
-
-            if (chartInstance) { chartInstance.destroy(); }
-
-            if (dataValues.reduce((sum, current) => sum + current, 0) === 0) {
-                return; 
-            }
-
-            chartInstance = new Chart(canvas, {
-                type: 'doughnut',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        label: 'Distribución Histórica (Unidades Base)',
-                        data: dataValues,
-                        backgroundColor: ['#f59e0b', '#ef4444', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6', '#f472b6', '#fb7185'],
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { position: 'right', labels: { boxWidth: 10, font: { size: 10 } } } }
-                }
-            });
-        }
-
-        // --- FUNCIONES DE UTILIDAD Y CONFIGURACIÓN ---
-
         function obtenerFechaLocal() {
             const now = new Date();
             now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
             return now.toISOString().slice(0,16);
         }
 
-        function establecerFechaInput() {
+        function obtenerFechaHoyYMD() {
+            const now = new Date();
+            now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+            return now.toISOString().slice(0,10);
+        }
+
+        function establecerInputs() {
             const el = document.getElementById('fecha');
             if(el) el.value = obtenerFechaLocal();
+            
+            const filtroPanel = document.getElementById('filtro-fecha-panel');
+            if(filtroPanel && !filtroPanel.value) filtroPanel.value = obtenerFechaHoyYMD();
         }
+
+        // --- GESTIÓN DE CSV Y PRODUCTOS ---
         
         function getProductDefault(key) {
-             if (key === 'panaderia') return `Media Luna Dulce | Unidad | Docena | 12 | 0\nMedia Luna Salada | Unidad | Docena | 12 | 0\nPan Francés | Kg | Unidad | 0.5 | 0\nLibritos | Kg | Docena | 0.3 | 0\nBizcochos | Kg | Paquete | 0.25 | 0\nVigilante | Unidad | Docena | 12 | 0\nSacramento | Unidad | Docena | 12 | 0\nCremonas | Unidad | Docena | 12 | 0`;
-             if (key === 'pasteleria') return `Tarta Frutal | Unidad | Porción | 6 | 0\nAlfajor de Maicena | Unidad | Bandeja | 10 | 0\nTorta Negra | Unidad | - | 1 | 0\nPan dulce matero | Unidad | - | 1 | 0`;
-             if (key === 'cocina') return `Prepizza de tomate | Unidad | Pack | 3 | 0\nPrepizza de cebolla | Unidad | Pack | 3 | 0\nFugaza sandwichera | Unidad | Docena | 12 | 0\nPebete blanco | Unidad | Paquete | 4 | 0\nChip | Unidad | Paquete | 10 | 0`;
+             if (key === 'panaderia') return `Media Luna Dulce | Unidad | Docena | 12 | 0\nMedia Luna Salada | Unidad | Docena | 12 | 0\nFactura Rellena | Unidad | Docena | 12 | 0\nPan Francés | Kg | Unidad | 0.5 | 0\nPan Rallado | Kg | - | 1 | 0\nLibritos | Kg | Docena | 0.3 | 0`;
+             if (key === 'pasteleria') return `Tarta Frutal | Unidad | Porción | 6 | 0\nAlfajor de Maicena | Unidad | Bandeja | 10 | 0`;
+             if (key === 'cocina') return `Prepizza Tomate | Unidad | Pack | 3 | 0\nPizza Lista | Unidad | - | 1 | 0`;
             return '';
         }
         
         function procesarProductosCSV(csvText, categoria) {
             return csvText.split('\n').map(l => l.trim()).filter(l => l.length > 0).map((l, i) => {
                 const p = l.split('|').map(s => s.trim());
+                // Usamos el índice 'i' para garantizar que se respete el orden de la lista
                 return { 
-                    id: `${categoria}_${i}`, 
+                    id: `${categoria}_${String(i).padStart(3, '0')}`, 
                     categoria: categoria,
                     nombre: p[0], 
                     unidad: p[1] || 'Unidad', 
@@ -112,15 +92,48 @@
                 };
             });
         }
-        
-        function procesarOperarios(txt) {
-            operariosGlobal = txt.split('\n').map(s => s.trim()).filter(s => s.length > 0);
-            llenarSelectOperarios();
+
+        // --- CARGA INICIAL DE DATOS ---
+
+        async function cargarConfiguracionGeneral() {
+            try {
+                productosGlobal = [];
+                // Carga secuencial para respetar el orden estricto de las familias
+                for (const key of ORDEN_CATEGORIAS) {
+                    const docRef = db.collection(COLL_CONFIG).doc(`productos_${key}`);
+                    const docSnap = await docRef.get();
+                    
+                    let csv = getProductDefault(key);
+                    if (docSnap.exists) csv = docSnap.data().csv;
+                    else await docRef.set({ csv: csv });
+                    
+                    const configEl = document.getElementById(`config-${key}`);
+                    if(configEl) configEl.value = csv;
+                    
+                    productosGlobal.push(...procesarProductosCSV(csv, key));
+                }
+
+                // Cargar Operarios
+                const docOp = await db.collection(COLL_CONFIG).doc("operarios_lista").get();
+                let txtOp = "Mañana\nTarde\nNoche";
+                if (docOp.exists) txtOp = docOp.data().lista;
+                else await db.collection(COLL_CONFIG).doc("operarios_lista").set({ lista: txtOp });
+
+                const opEl = document.getElementById('config-operarios');
+                if(opEl) opEl.value = txtOp; 
+                
+                operariosGlobal = txtOp.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+                llenarSelectOperarios();
+
+            } catch (e) {
+                console.error("Error al cargar config:", e);
+                alert("Error de conexión al cargar configuración.");
+            }
         }
 
         function llenarSelectOperarios() {
             const sel = document.getElementById('operario');
-            if (!sel) return; 
+            if(!sel) return;
             const actual = sel.value;
             sel.innerHTML = '';
             operariosGlobal.forEach(op => {
@@ -130,20 +143,266 @@
             if(actual) sel.value = actual;
         }
 
+        // --- ESCUCHA DE MOVIMIENTOS ---
+
+        function escucharMovimientos() {
+            db.collection(COLL_MOVIMIENTOS).orderBy("timestamp", "desc").onSnapshot((snapshot) => {
+                movimientosGlobal = [];
+                snapshot.forEach((doc) => movimientosGlobal.push({ id: doc.id, ...doc.data() }));
+                actualizarPanelPrincipal();
+                actualizarHistorialVisual(); 
+            });
+        }
+
+        // ============================================================
+        // 2. LÓGICA PRINCIPAL (CÁLCULOS Y DASHBOARD)
+        // ============================================================
+
+        window.actualizarPanelPrincipal = function() {
+            const filtroFechaInput = document.getElementById('filtro-fecha-panel');
+            const fechaSeleccionada = filtroFechaInput ? filtroFechaInput.value : obtenerFechaHoyYMD();
+
+            // Maps para acumular datos
+            const stockMap = {}; // Stock histórico acumulado (Real)
+            productosGlobal.forEach(p => stockMap[p.id] = p.stockInicial);
+            
+            // Datos del día seleccionado
+            const produccionDia = {};
+            const descarteDia = {};
+            const reutilizacionDia = {};
+            
+            let totalProd = 0;
+            let totalDesc = 0;
+            let totalReut = 0;
+
+            // Procesamos movimientos (reverse para calcular stock cronológicamente)
+            [...movimientosGlobal].reverse().forEach(m => {
+                // 1. STOCK REAL (Siempre se calcula todo)
+                // ENTRADA suma, todo lo demás resta
+                if(m.tipo === 'ENTRADA') stockMap[m.productoId] += Math.abs(m.cantidadBase);
+                else stockMap[m.productoId] -= Math.abs(m.cantidadBase);
+
+                // 2. REPORTE DEL DÍA (Solo si coincide la fecha)
+                if (m.fecha.startsWith(fechaSeleccionada)) {
+                    const cant = Math.abs(m.cantidadBase);
+                    
+                    if (m.tipo === 'ENTRADA') { 
+                        produccionDia[m.productoId] = (produccionDia[m.productoId] || 0) + cant;
+                        totalProd += cant;
+                    } 
+                    else if (m.tipo === 'DESCARTE') { 
+                        descarteDia[m.productoId] = (descarteDia[m.productoId] || 0) + cant;
+                        totalDesc += cant;
+                    }
+                    else if (m.tipo === 'REUTILIZACION') { 
+                        reutilizacionDia[m.productoId] = (reutilizacionDia[m.productoId] || 0) + cant;
+                        totalReut += cant;
+                    }
+                    // 'SALIDA' (Venta manual) no la sumamos a los KPIs de producción/merma, pero sí afecta el stock.
+                }
+            });
+
+            // --- ACTUALIZAR UI ---
+
+            // A. Fecha en título
+            const [yyyy, mm, dd] = fechaSeleccionada.split('-');
+            const labelFecha = document.getElementById('label-fecha-tabla');
+            if(labelFecha) labelFecha.innerText = `${dd}/${mm}/${yyyy}`;
+
+            // B. KPIs Superiores
+            document.getElementById('kpi-prod-total').innerText = totalProd.toFixed(0);
+            document.getElementById('kpi-descarte-total').innerText = totalDesc.toFixed(0);
+            
+            // Cálculo de porcentaje de pérdida (Descarte sobre Producción)
+            let porcentaje = 0;
+            if(totalProd > 0) porcentaje = (totalDesc / totalProd) * 100;
+            
+            const kpiPorc = document.getElementById('kpi-porcentaje-merma');
+            kpiPorc.innerText = porcentaje.toFixed(1) + '%';
+            // Colores semáforo para el KPI
+            kpiPorc.className = "text-xl font-bold " + (porcentaje > 15 ? "text-red-600" : (porcentaje > 5 ? "text-amber-600" : "text-green-600"));
+
+            // C. Tabla Detallada (Iteramos productosGlobal para respetar ORDEN DE CONFIGURACIÓN)
+            const tbody = document.getElementById('tabla-produccion-hoy');
+            if (tbody) {
+                tbody.innerHTML = '';
+                let hayDatos = false;
+                
+                productosGlobal.forEach(p => {
+                    const prod = produccionDia[p.id] || 0;
+                    const desc = descarteDia[p.id] || 0;
+                    const reut = reutilizacionDia[p.id] || 0;
+                    
+                    // Solo mostramos si hubo movimiento hoy
+                    if (prod > 0 || desc > 0 || reut > 0) {
+                        hayDatos = true;
+                        // Cálculo Venta Estimada = Prod - Reutilizado - Tirado
+                        // Si da negativo (porque vendí stock viejo), mostramos el número real igual.
+                        const ventaEst = prod - reut - desc;
+                        
+                        tbody.innerHTML += `
+                            <tr class="border-b border-gray-100 hover:bg-gray-50 text-xs sm:text-sm">
+                                <td class="py-2 pl-3 font-medium text-gray-800">${p.nombre}</td>
+                                <td class="py-2 text-center font-bold text-green-600 border-l">${prod > 0 ? prod.toFixed(1) : '-'}</td>
+                                <td class="py-2 text-center font-bold text-orange-500 border-l">${reut > 0 ? reut.toFixed(1) : '-'}</td>
+                                <td class="py-2 text-center font-bold text-red-600 border-l bg-red-50">${desc > 0 ? desc.toFixed(1) : '-'}</td>
+                                <td class="py-2 text-center font-bold text-blue-700 border-l">${ventaEst.toFixed(1)} <span class="text-[10px] text-gray-400 font-normal">${p.unidad}</span></td>
+                            </tr>
+                        `;
+                    }
+                });
+
+                if (!hayDatos) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="text-center py-6 text-gray-400 italic text-xs">Sin movimientos en esta fecha</td></tr>';
+                }
+            }
+
+            // D. Tarjetas de Stock Actual (Siempre visibles, ordenadas por Configuración)
+            const grid = document.getElementById('grid-stock');
+            if (grid) {
+                grid.innerHTML = '';
+                productosGlobal.forEach(p => {
+                    const actual = stockMap[p.id] || 0;
+                    // Filtro visual opcional: Mostrar solo si hay stock o si es negativo
+                    // O mostrar todo. Mostraremos todo para facilitar control.
+                    const borde = actual < 0 ? 'border-red-500' : (actual < 5 ? 'border-amber-400' : 'border-gray-200');
+                    
+                    grid.innerHTML += `
+                        <div class="bg-white p-2 rounded border-l-4 ${borde} shadow-sm flex justify-between items-center">
+                            <div class="overflow-hidden pr-2">
+                                <h4 class="font-bold text-gray-700 text-xs truncate" title="${p.nombre}">${p.nombre}</h4>
+                                <span class="text-[9px] text-gray-400 uppercase tracking-wider">${CATEGORIAS_NOMBRES[p.categoria]}</span>
+                            </div>
+                            <div class="text-right">
+                                <span class="block text-sm font-bold ${actual < 0 ? 'text-red-600' : 'text-gray-800'}">${actual.toFixed(1)}</span>
+                                <span class="text-[9px] text-gray-500">${p.unidad}</span>
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+            
+            // E. Gráfico
+            actualizarGraficos(produccionDia, productosGlobal);
+        }
+        
+        let chartInstance = null;
+        function actualizarGraficos(dataMap, productos) {
+            const canvas = document.getElementById('graficoProduccion');
+            if (!canvas) return;
+            
+            const labels = [];
+            const dataValues = [];
+            
+            // Respetamos orden de productos para los colores del gráfico
+            productos.forEach(p => {
+                if(dataMap[p.id] > 0) {
+                    labels.push(p.nombre);
+                    dataValues.push(dataMap[p.id]);
+                }
+            });
+
+            if (chartInstance) { chartInstance.destroy(); }
+            if (dataValues.length === 0) return;
+
+            chartInstance = new Chart(canvas, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: dataValues,
+                        backgroundColor: ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6'],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { position: 'right', labels: { boxWidth: 8, font: { size: 9 } } } }
+                }
+            });
+        }
+
+        // ============================================================
+        // 3. REGISTRO DE MOVIMIENTOS (CARGA)
+        // ============================================================
+
+        window.guardarMovimiento = function(e) {
+            e.preventDefault();
+            if (!currentUser) return alert("Esperando conexión...");
+            
+            const btn = e.target.querySelector('button[type="submit"]');
+            btn.disabled = true; btn.innerText = "Guardando...";
+
+            const prodId = document.getElementById('producto').value;
+            const prod = productosGlobal.find(p => p.id === prodId);
+            const tipo = document.getElementById('tipo').value; 
+            const formato = document.getElementById('formato').value;
+            const cantidad = parseFloat(document.getElementById('cantidad').value);
+            const operario = document.getElementById('operario').value;
+            const fecha = document.getElementById('fecha').value;
+
+            if(!prod) { btn.disabled=false; btn.innerText="CONFIRMAR"; return alert("Producto no válido."); }
+            if(isNaN(cantidad) || cantidad <= 0) { btn.disabled=false; btn.innerText="CONFIRMAR"; return alert("Cantidad inválida."); }
+
+            // Lógica de Unidades
+            let cantBase = cantidad;
+            let formatoTexto = 'Unidad';
+            if (formato === 'manual_docena') { cantBase = cantidad * 12; formatoTexto = 'Docena'; }
+            else if (formato === 'manual_kg') { cantBase = cantidad; formatoTexto = 'Kg'; }
+            else if (formato === 'alterno') { cantBase = cantidad * prod.factor; formatoTexto = prod.alterno; }
+
+            // Lógica de Signo para Stock
+            // ENTRADA (+), el resto (REUTILIZACION, DESCARTE, SALIDA) son restas (-)
+            let cantBaseCalculo = (tipo === 'ENTRADA') ? cantBase : -Math.abs(cantBase);
+
+            db.collection(COLL_MOVIMIENTOS).add({
+                productoId: prodId, 
+                productoNombre: prod.nombre,
+                tipo: tipo, 
+                cantidadOriginal: cantidad, 
+                formatoUsado: formatoTexto,
+                cantidadBase: cantBaseCalculo, 
+                operario: operario, 
+                fecha: fecha,
+                timestamp: new Date().toISOString()
+            }).then(() => {
+                // Notificación Toast
+                mostrarToast("Movimiento registrado correctamente");
+                e.target.reset();
+                establecerInputs();
+                actualizarFormato(); 
+                document.getElementById('operario').value = operario; 
+            }).catch((err) => {
+                alert("Error: " + err.message);
+            }).finally(() => {
+                btn.disabled = false; btn.innerText = "CONFIRMAR CARGA";
+            });
+        }
+        
+        function mostrarToast(msg) {
+            const toast = document.createElement('div');
+            toast.className = "fixed bottom-5 right-5 bg-gray-800 text-white px-4 py-2 rounded shadow-lg z-50 text-sm";
+            toast.innerText = msg;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 2500);
+        }
+
+        // --- INTERFAZ DINÁMICA DE CARGA ---
+        
         window.filtrarProductos = function(categoria) {
             const sel = document.getElementById('producto');
             if (!sel) return;
             sel.innerHTML = '<option value="" disabled selected>Seleccione producto...</option>';
             
-            let filteredList = productosGlobal;
-            if (categoria && CATEGORIAS.hasOwnProperty(categoria)) {
-                filteredList = productosGlobal.filter(p => p.categoria === categoria);
-                document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('bg-amber-600', 'text-white'));
-                const btn = document.getElementById(`btn-cat-${categoria}`);
-                if (btn) btn.classList.add('bg-amber-600', 'text-white');
-            }
+            // Filtramos manteniendo el orden global
+            const filtrados = productosGlobal.filter(p => p.categoria === categoria);
 
-            filteredList.forEach(p => {
+            document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('bg-amber-600', 'text-white', 'shadow-md'));
+            const btn = document.getElementById(`btn-cat-${categoria}`);
+            if (btn) btn.classList.add('bg-amber-600', 'text-white', 'shadow-md');
+
+            filtrados.forEach(p => {
                 const opt = document.createElement('option');
                 opt.value = p.id; opt.text = p.nombre; sel.appendChild(opt);
             });
@@ -153,9 +412,19 @@
         window.actualizarFormato = function() {
             const p = productosGlobal.find(x => x.id === document.getElementById('producto').value);
             const s = document.getElementById('formato');
+            const tipo = document.getElementById('tipo');
             if (!s) return;
             s.innerHTML = '';
             
+            // Color coding para el select de tipo
+            if(tipo) {
+                tipo.className = "input-field w-full font-bold border-2 text-sm ";
+                if(tipo.value === 'ENTRADA') tipo.classList.add('border-green-500', 'text-green-700');
+                else if(tipo.value === 'DESCARTE') tipo.classList.add('border-red-500', 'text-red-700');
+                else if(tipo.value === 'REUTILIZACION') tipo.classList.add('border-orange-400', 'text-orange-700');
+                else tipo.classList.add('border-blue-500', 'text-blue-700');
+            }
+
             if(p) {
                 s.add(new Option("Unidad", "manual_unidad"));
                 s.add(new Option("Docena", "manual_docena"));
@@ -172,610 +441,18 @@
             }
         }
 
-      // --- LÓGICA PRINCIPAL Y CONEXIÓN A DB ---
-
-async function cargarConfiguracionGeneral() {
-    try {
-        productosGlobal = [];
-        for (const key in CATEGORIAS) {
-            const docRef = db.collection(COLL_CONFIG).doc(`productos_${key}`);
-            const docSnap = await docRef.get();
-            
-            let csv = getProductDefault(key);
-            if (docSnap.exists) csv = docSnap.data().csv;
-            else await docRef.set({ csv: csv });
-            
-            const configEl = document.getElementById(`config-${key}`);
-            if(configEl) configEl.value = csv;
-            productosGlobal.push(...procesarProductosCSV(csv, key));
-        }
-
-        const docOp = await db.collection(COLL_CONFIG).doc("operarios_lista").get();
-        let txtOp = "Mañana\nTarde\nNoche";
-        if (docOp.exists) txtOp = docOp.data().lista;
-        else await db.collection(COLL_CONFIG).doc("operarios_lista").set({ lista: txtOp });
-
-        const opEl = document.getElementById('config-operarios');
-        if(opEl) opEl.value = txtOp; // 🛠️ CORRECCIÓN: cambiamos 'opOp' por 'opEl'
-        procesarOperarios(txtOp); // Esta línea ahora se ejecuta correctamente
-
-    } catch (e) {
-        console.error("Error al cargar config general:", e);
-    }
-}
-
-        // --- CÁLCULOS Y MANEJO DE MOVIMIENTOS ---
-
-        function escucharMovimientos() {
-            db.collection(COLL_MOVIMIENTOS).orderBy("timestamp", "desc").onSnapshot((snapshot) => {
-                movimientosGlobal = [];
-                snapshot.forEach((doc) => movimientosGlobal.push({ id: doc.id, ...doc.data() }));
-                actualizarPanelPrincipal();
-                actualizarHistorialVisual(); 
-            });
-        }
-        
-        function esHoy(fechaIsoString) {
-             const hoy = obtenerFechaLocal().split('T')[0];
-             return fechaIsoString && fechaIsoString.startsWith(hoy);
-        }
-
-        function actualizarPanelPrincipal() {
-            const stockMap = {};
-            productosGlobal.forEach(p => stockMap[p.id] = p.stockInicial);
-            
-            const produccionDiariaMap = {}; 
-            const sobranteDiarioMap = {};
-            const produccionHistoricaMap = {}; 
-
-            [...movimientosGlobal].reverse().forEach(m => {
-                stockMap[m.productoId] += m.cantidadBase;
-
-                if (esHoy(m.fecha)) {
-                    if (m.tipo === 'ENTRADA') {
-                        if (!produccionDiariaMap[m.productoId]) produccionDiariaMap[m.productoId] = 0;
-                        produccionDiariaMap[m.productoId] += Math.abs(m.cantidadBase);
-                    } else if (m.tipo === 'SOBRANTE') {
-                         if (!sobranteDiarioMap[m.productoId]) sobranteDiarioMap[m.productoId] = 0;
-                         sobranteDiarioMap[m.productoId] += Math.abs(m.cantidadBase);
-                    }
-                }
-                
-                 if (m.tipo !== 'SALIDA') {
-                    if (!produccionHistoricaMap[m.productoNombre]) produccionHistoricaMap[m.productoNombre] = 0;
-                    produccionHistoricaMap[m.productoNombre] += Math.abs(m.cantidadBase);
-                }
-            });
-
-            // 1. Renderizar Tabla "Reconciliación Diaria"
-            const tbodyHoy = document.getElementById('tabla-produccion-hoy');
-            if (!tbodyHoy) return;
-            tbodyHoy.innerHTML = '';
-            let hayDatosHoy = false;
-            
-            productosGlobal.forEach(p => {
-                const prod = produccionDiariaMap[p.id] || 0;
-                const sob = sobranteDiarioMap[p.id] || 0;
-                
-                if (prod > 0 || sob > 0) {
-                    hayDatosHoy = true;
-                    const ventaCalculada = (prod - sob) >= 0 ? (prod - sob) : 0;
-                    const colorVenta = ventaCalculada > 0 ? 'text-blue-700' : 'text-gray-500';
-                    const productoInfo = productosGlobal.find(x => x.id === p.id);
-                    const unidadBase = productoInfo ? productoInfo.unidad : 'Unidad';
-
-                    tbodyHoy.innerHTML += `
-                        <tr class="border-b border-green-100">
-                            <td class="py-2 font-medium text-gray-800 pl-4">${p.nombre}</td>
-                            <td class="py-2 text-center text-green-700">${prod.toFixed(1)} ${unidadBase}</td>
-                            <td class="py-2 text-center text-amber-700">${sob.toFixed(1)} ${unidadBase}</td>
-                            <td class="py-2 text-center font-bold ${colorVenta}">${ventaCalculada.toFixed(1)} ${unidadBase}</td>
-                        </tr>
-                    `;
-                }
-            });
-            
-            if (!hayDatosHoy) {
-                tbodyHoy.innerHTML = '<tr><td colspan="4" class="text-center py-6 text-gray-400 italic">Sin movimientos de Producción/Sobrante registrados hoy</td></tr>';
-            }
-
-            // 2. Renderizar Tarjetas de Stock General (Depósito)
-            const grid = document.getElementById('grid-stock');
-            if (!grid) return;
-            grid.innerHTML = '';
-            let alertaStock = 0;
-
-            productosGlobal.forEach(p => {
-                const actual = stockMap[p.id] || 0;
-                if (actual < 10 && actual > 0) alertaStock++;
-                
-                grid.innerHTML += `
-                    <div class="bg-white p-3 rounded shadow border-l-4 ${actual < 10 ? 'border-red-500' : 'border-amber-500'} flex justify-between items-center transition duration-300 hover:shadow-lg">
-                        <div class="overflow-hidden">
-                            <h3 class="font-bold text-gray-700 truncate text-sm">${p.nombre}</h3>
-                            <p class="text-xs text-gray-400">Total Depósito</p>
-                        </div>
-                        <div class="text-right">
-                            <span class="block text-lg font-bold text-gray-800">${actual.toFixed(1)}</span>
-                            <span class="text-xs text-gray-500">${p.unidad}</span>
-                        </div>
-                    </div>
-                `;
-            });
-
-            const kpiAlerta = document.getElementById('kpi-alertas');
-            if(kpiAlerta) kpiAlerta.innerText = alertaStock;
-            
-            // 3. Actualizar Gráficos
-            actualizarGraficos(produccionHistoricaMap);
-        }
-
-        window.guardarMovimiento = function(e) {
-            e.preventDefault();
-            if (!currentUser) return alert("Esperando conexión...");
-            
-            const btn = e.target.querySelector('button');
-            btn.disabled = true;
-            btn.innerText = "Guardando...";
-
-            const prodId = document.getElementById('producto').value;
-            const prod = productosGlobal.find(p => p.id === prodId);
-            const tipo = document.getElementById('tipo').value; 
-            const formato = document.getElementById('formato').value;
-            const cantidad = parseFloat(document.getElementById('cantidad').value);
-            const operario = document.getElementById('operario').value;
-            const fecha = document.getElementById('fecha').value;
-
-            if(!prod) return alert("Producto no válido.");
-            if(isNaN(cantidad) || cantidad <= 0) return alert("Cantidad debe ser un número positivo.");
-
-            let cantBase = cantidad;
-            let formatoTexto = '';
-            
-            if (formato === 'manual_unidad') { cantBase = cantidad; formatoTexto = 'Unidad';} 
-            else if (formato === 'manual_docena') { cantBase = cantidad * 12; formatoTexto = 'Docena';} 
-            else if (formato === 'manual_kg') { cantBase = cantidad; formatoTexto = 'Kg';} 
-            else if (formato === 'alterno') { cantBase = cantidad * prod.factor; formatoTexto = prod.alterno; }
-            
-            let cantBaseCalculo = cantBase;
-            if (tipo === 'SALIDA') { cantBaseCalculo = -Math.abs(cantBase); }
-
-            db.collection(COLL_MOVIMIENTOS).add({
-                productoId: prodId, productoNombre: prod.nombre,
-                tipo: tipo, cantidadOriginal: cantidad, formatoUsado: formatoTexto,
-                cantidadBase: cantBaseCalculo, operario: operario, fecha: fecha,
-                timestamp: new Date().toISOString()
-            }).then(() => {
-                alert(`Movimiento ${tipo} registrado`);
-                e.target.reset();
-                establecerFechaInput();
-                actualizarFormato(); 
-                document.getElementById('operario').value = operario; 
-            }).catch((err) => {
-                alert("Error: " + err.message);
-            }).finally(() => {
-                btn.disabled = false;
-                btn.innerText = "CONFIRMAR CARGA";
-            });
-        }
-        
-        // --- HISTORIAL Y CORRECCIÓN DE ERRORES (ADMIN) ---
-
-        let modoHistorial = 'cronologico'; 
+        // ============================================================
+        // 4. HISTORIAL Y MODOS
+        // ============================================================
         
         window.toggleModoHistorial = function() {
             modoHistorial = modoHistorial === 'cronologico' ? 'agrupado' : 'cronologico';
             const btn = document.getElementById('btn-toggle-historial');
-            if(btn) btn.innerHTML = modoHistorial === 'cronologico' ? '<i class="fas fa-layer-group mr-1"></i> Agrupar por Producto' : '<i class="fas fa-list-ol mr-1"></i> Ver Cronológico';
+            if(btn) btn.innerHTML = modoHistorial === 'cronologico' ? '<i class="fas fa-layer-group mr-1"></i> Agrupar por Producto' : '<i class="fas fa-clock mr-1"></i> Ver Cronológico';
             actualizarHistorialVisual();
         }
 
-        function getColorClase(tipo) {
-            if (tipo === 'ENTRADA') return 'text-green-600';
-            if (tipo === 'SOBRANTE') return 'text-blue-600'; 
-            return 'text-red-600';
-        }
-
-        function getSigno(tipo) {
-            if (tipo === 'SALIDA') return '-';
-            return '+';
-        }
-
-        function getAbrev(tipo) {
-            if (tipo === 'ENTRADA') return 'PROD';
-            if (tipo === 'SALIDA') return 'VENTA';
-            return 'SOB';
-        }
-
-        function actualizarHistorialVisual() {
-            const div = document.getElementById('contenedor-historial');
-            if (!div) return;
-            div.innerHTML = '';
-
-            if (movimientosGlobal.length === 0) {
-                div.innerHTML = '<p class="text-center text-gray-400 p-4">No hay movimientos</p>';
-                return;
-            }
-
-            // MODO CRONOLÓGICO (Tabla)
-            if (modoHistorial === 'cronologico') {
-                let html = `<table class="w-full text-sm"><thead class="bg-gray-100 text-gray-500"><tr><th class="p-2 text-left">Hora</th><th class="p-2 text-left">Producto</th><th class="p-2 text-center">Tipo</th><th class="p-2 text-right">Cant</th><th class="p-2 text-right">Op</th><th class="p-2 text-right"></th></tr></thead><tbody>`;
-                movimientosGlobal.slice(0, 100).forEach(m => {
-                    const hora = m.fecha.slice(11,16);
-                    const dia = m.fecha.slice(8,10); 
-                    const color = getColorClase(m.tipo);
-                    const abrev = getAbrev(m.tipo);
-                    const deleteBtn = isAdminUnlocked ? `<button onclick="eliminarMovimiento('${m.id}')" class="text-red-400 hover:text-red-600 transition"><i class="fas fa-trash-alt"></i></button>` : '';
-
-                    html += `<tr class="border-b hover:bg-gray-50">
-                        <td class="p-2 text-gray-500 text-xs">${dia} ${hora}</td>
-                        <td class="p-2 font-medium">${m.productoNombre}</td>
-                        <td class="p-2 text-center text-xs font-bold"><span class="bg-gray-200 px-1 rounded-full text-gray-600">${abrev}</span></td>
-                        <td class="p-2 text-right font-bold ${color}">${getSigno(m.tipo)}${Math.abs(m.cantidadOriginal)} ${m.formatoUsado}</td>
-                         <td class="p-2 text-right text-xs text-gray-500">${m.operario}</td>
-                         <td class="p-2 text-right w-10">${deleteBtn}</td>
-                    </tr>`;
-                });
-                html += '</tbody></table>';
-                div.innerHTML = html;
-
-            } 
-            // MODO AGRUPADO (Cards)
-            else {
-                const agrupado = {};
-                movimientosGlobal.forEach(m => {
-                    if (!agrupado[m.productoNombre]) agrupado[m.productoNombre] = [];
-                    agrupado[m.productoNombre].push(m);
-                });
-
-                Object.keys(agrupado).sort().forEach(prod => {
-                    let itemsHtml = '';
-                    agrupado[prod].forEach(m => {
-                         const color = getColorClase(m.tipo);
-                         const deleteBtn = isAdminUnlocked ? `<button onclick="eliminarMovimiento('${m.id}')" class="text-red-400 hover:text-red-600 transition ml-2"><i class="fas fa-trash-alt"></i></button>` : '';
-                         
-                         itemsHtml += `<div class="flex justify-between text-xs border-b border-gray-100 py-1">
-                            <span class="text-gray-500">${m.fecha.slice(8,10)}/${m.fecha.slice(5,7)} ${m.fecha.slice(11,16)} - ${m.operario}</span>
-                            <span class="font-bold ${color}">${getSigno(m.tipo)}${Math.abs(m.cantidadOriginal)} ${m.formatoUsado} (${getAbrev(m.tipo)})${deleteBtn}</span>
-                         </div>`;
-                    });
-
-                    div.innerHTML += `
-                        <div class="bg-white border rounded mb-2 overflow-hidden shadow-sm">
-                            <div class="bg-amber-50 p-2 font-bold text-amber-900 flex justify-between">
-                                <span>${prod}</span>
-                                <span class="text-xs bg-amber-200 px-2 rounded-full pt-1">${agrupado[prod].length} movs</span>
-                            </div>
-                            <div class="p-2 bg-white">
-                                ${itemsHtml}
-                            </div>
-                        </div>
-                    `;
-                });
-            }
-        }
-        
         window.eliminarMovimiento = async function(id) {
-            if (!isAdminUnlocked) return alert("Acceso denegado. Desbloquee el modo Admin en Configuración.");
-            if (!confirm("⚠️ ¿Desea eliminar ESTE movimiento histórico? Esto corregirá su stock general. Esta acción no se puede deshacer.")) return;
-
-            try {
-                await db.collection(COLL_MOVIMIENTOS).doc(id).delete();
-                alert("Movimiento eliminado correctamente. Su stock se ha corregido. Recargando historial.");
-            } catch (error) {
-                alert("Error al eliminar movimiento: " + error.message);
-            }
-        }
-        
-        // --- SEGURIDAD Y CONFIGURACIÓN ---
-
-        function verificarAdmin() {
-            if (isAdminUnlocked) return true;
-            const pass = prompt("🔒 ACCESO RESTRINGIDO\nIngrese la contraseña de Administrador:");
-            if (pass === CLAVE_ADMIN) {
-                isAdminUnlocked = true;
-                return true;
-            } else {
-                alert("Contraseña incorrecta.");
-                return false;
-            }
-        }
-
-        window.cambiarVista = function(id) {
-            const configBtn = document.getElementById('btn-vista-config');
-            const historialBtn = document.getElementById('btn-vista-historial');
-
-            if (id === 'vista-config' || id === 'vista-historial') {
-                if (id === 'vista-config') {
-                    if (!verificarAdmin()) return; 
-                }
-
-                if (isAdminUnlocked) {
-                    configBtn.innerHTML = '<i class="fas fa-unlock block mb-1"></i>Admin';
-                    historialBtn.classList.add('admin-unlocked');
-                } else {
-                    configBtn.innerHTML = '<i class="fas fa-lock block mb-1"></i>Config';
-                    historialBtn.classList.remove('admin-unlocked');
-                }
-            }
-            
-            document.querySelectorAll('.vista').forEach(d => d.classList.add('hidden'));
-            const vista = document.getElementById(id);
-            if (vista) vista.classList.remove('hidden');
-            
-            document.querySelectorAll('.nav-btn').forEach(b => {
-                b.classList.remove('border-amber-300', 'text-white', 'font-bold');
-                b.classList.add('border-transparent', 'text-amber-100');
-            });
-            const btn = document.getElementById('btn-' + id);
-            if(btn) {
-                 btn.classList.add('border-amber-300', 'text-white', 'font-bold');
-                 btn.classList.remove('border-transparent', 'text-amber-100');
-            }
-            
-            if (id === 'vista-carga') {
-                filtrarProductos('panaderia'); 
-            }
-        }
-
-        window.guardarConfiguracion = async function() {
-            if (!verificarAdmin()) return; 
-
-            try {
-                 for (const key in CATEGORIAS) {
-                    const csv = document.getElementById(`config-${key}`).value;
-                    await db.collection(COLL_CONFIG).doc(`productos_${key}`).set({ csv: csv });
-                 }
-
-                const nuevosOps = document.getElementById('config-operarios').value;
-                await db.collection(COLL_CONFIG).doc("operarios_lista").set({ lista: nuevosOps });
-                
-                await cargarConfiguracionGeneral(); 
-                alert("Configuración guardada correctamente. Productos y operarios actualizados.");
-            } catch(e) { alert("Error al guardar config: " + e.message); }
-        }
-        
-        window.limpiarBaseDeDatos = async function() {
-            if (!verificarAdmin()) return;
-             if (!confirm("⚠️ ¿Está absolutamente SEGURO de querer BORRAR TODA la base de datos de movimientos? Esta acción no se puede revertir.")) return;
-            
-             try {
-                const movimientos = await db.collection(COLL_MOVIMIENTOS).get();
-                const batch = db.batch();
-                movimientos.docs.forEach(doc => { batch.delete(doc.ref); });
-                await batch.commit();
-
-                for (const key in CATEGORIAS) {
-                    let csv = getProductDefault(key);
-                    csv = csv.split('\n').map(line => {
-                        const parts = line.split('|');
-                        if (parts.length === 5) { parts[4] = '0'; }
-                        return parts.join(' | ');
-                    }).join('\n');
-                    await db.collection(COLL_CONFIG).doc(`productos_${key}`).update({ csv: csv });
-                }
-
-                alert("Base de datos limpia y stock reiniciado a 0. Recargue la página.");
-                window.location.reload();
-
-             } catch (e) {
-                alert("Error grave al limpiar DB: " + e.message);
-             }
-        }
-
-
-        // --- INICIALIZACIÓN ---
-        
-        async function inicializarSistema() {
-            await cargarConfiguracionGeneral();
-            escucharMovimientos(); 
-            cambiarVista('vista-panel');
-        }
-
-        document.addEventListener('DOMContentLoaded', () => {
-            auth.signInAnonymously().catch(e => console.error("Error conexión: ", e));
-            auth.onAuthStateChanged((user) => {
-                if (user) {
-                    currentUser = user;
-                    const statusIcon = document.getElementById('status-icon');
-                    if(statusIcon) statusIcon.classList.replace('text-red-500', 'text-green-400');
-                    inicializarSistema();
-                }
-            });
-            establecerFechaInput();
-        });
-
-
-    </script>
-</head>
-<body class="bg-gray-100 h-screen flex flex-col overflow-hidden text-gray-800 font-sans">
-
-    <header class="bg-amber-700 text-white shadow-md flex-none z-20">
-        <div class="container mx-auto px-4 py-3 flex justify-between items-center">
-            <div class="flex items-center gap-2">
-                <i class="fas fa-bread-slice text-2xl text-amber-300"></i>
-                <div>
-                    <h1 class="font-bold text-lg leading-tight">Panadería Control de Producción</h1>
-                    <p class="text-xs text-amber-300 opacity-80">Gestión de Stock en Tiempo Real</p>
-                </div>
-            </div>
-            <div class="flex items-center gap-2">
-                <i id="status-icon" class="fas fa-circle text-red-500 text-xs"></i>
-            </div>
-        </div>
-    </header>
-
-    <div class="bg-amber-800 shadow-inner flex-none">
-        <div class="container mx-auto flex">
-            <button id="btn-vista-panel" onclick="cambiarVista('vista-panel')" class="nav-btn flex-1 py-3 text-center border-b-4 border-amber-300 text-white font-bold text-sm transition border-r border-amber-900/50">
-                <i class="fas fa-clipboard-list block mb-1"></i>Resumen
-            </button>
-            <button id="btn-vista-carga" onclick="cambiarVista('vista-carga')" class="nav-btn flex-1 py-3 text-center border-b-4 border-transparent text-amber-100 font-medium text-sm transition border-r border-amber-900/50">
-                <i class="fas fa-plus-circle block mb-1"></i>Cargar
-            </button>
-            <button id="btn-vista-historial" onclick="cambiarVista('vista-historial')" class="nav-btn flex-1 py-3 text-center border-b-4 border-transparent text-amber-100 font-medium text-sm transition border-r border-amber-900/50">
-                <i class="fas fa-history block mb-1"></i>Historial
-            </button>
-            <button id="btn-vista-config" onclick="cambiarVista('vista-config')" class="nav-btn flex-1 py-3 text-center border-b-4 border-transparent text-amber-100 font-medium text-sm transition">
-                <i class="fas fa-lock block mb-1"></i>Config
-            </button>
-        </div>
-    </div>
-
-    <main class="flex-1 overflow-y-auto bg-gray-50 p-4 pb-20">
-
-        <div id="vista-panel" class="vista container mx-auto max-w-5xl space-y-4">
-            
-            <div class="bg-white rounded-lg shadow-md border-t-4 border-green-500 overflow-hidden">
-                <div class="bg-green-50 px-4 py-3 border-b border-green-100 flex justify-between items-center">
-                    <div>
-                        <h2 class="font-bold text-green-900 text-lg">Reconciliación Diaria</h2>
-                        <p class="text-xs text-green-700">Diferencia a validar con el sistema de facturación</p>
-                    </div>
-                    <i class="fas fa-calculator text-green-300 text-2xl"></i>
-                </div>
-                <div class="p-0 overflow-x-auto">
-                    <table class="w-full text-sm">
-                        <thead class="bg-gray-50 text-xs text-gray-500 uppercase">
-                            <tr>
-                                <th class="text-left py-2 pl-4">Producto</th>
-                                <th class="text-center py-2">Prod. (A)</th>
-                                <th class="text-center py-2">Sob. (B)</th>
-                                <th class="text-center py-2 font-bold text-blue-700">Venta Esp. (A-B)</th>
-                            </tr>
-                        </thead>
-                        <tbody id="tabla-produccion-hoy" class="divide-y divide-gray-100">
-                            <tr><td colspan="4" class="text-center py-4 text-gray-400">Cargando...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            
-            <div class="bg-white p-3 rounded-lg shadow h-64 border border-gray-100">
-                <h3 class="font-bold text-gray-700 mb-1 text-sm">Distribución Histórica (Producción/Sobrante)</h3>
-                <div class="h-56 relative">
-                    <canvas id="graficoProduccion"></canvas>
-                </div>
-            </div>
-
-            <div class="flex justify-between items-center mt-6 mb-2">
-                <h3 class="font-bold text-gray-700 text-sm">Stock General (Depósito)</h3>
-                <span class="bg-red-100 text-red-800 text-xs font-bold px-2 py-1 rounded-full"><span id="kpi-alertas">0</span> Bajos</span>
-            </div>
-            <div id="grid-stock" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                </div>
-        </div>
-
-        <div id="vista-carga" class="vista hidden container mx-auto max-w-md">
-            <div class="bg-white p-5 rounded-lg shadow-lg border-t-4 border-amber-500 space-y-5">
-                <h2 class="text-lg font-bold text-gray-800 text-center border-b pb-2">Nueva Carga</h2>
-                
-                <div class="flex justify-between bg-gray-100 p-2 rounded-lg gap-2">
-                    <button id="btn-cat-panaderia" onclick="filtrarProductos('panaderia')" class="cat-btn flex-1 py-2 px-1 text-xs font-bold rounded-md transition hover:bg-amber-100">Panadería</button>
-                    <button id="btn-cat-pasteleria" onclick="filtrarProductos('pasteleria')" class="cat-btn flex-1 py-2 px-1 text-xs font-bold rounded-md transition hover:bg-amber-100">Pastelería</button>
-                    <button id="btn-cat-cocina" onclick="filtrarProductos('cocina')" class="cat-btn flex-1 py-2 px-1 text-xs font-bold rounded-md transition hover:bg-amber-100">Cocina</button>
-                </div>
-                
-                <form onsubmit="guardarMovimiento(event)" class="space-y-4">
-                    <div>
-                        <label class="lbl">Producto</label>
-                        <select id="producto" onchange="actualizarFormato()" required class="input-field w-full bg-gray-50"></select>
-                    </div>
-
-                    <div class="flex gap-3">
-                        <div class="w-1/2">
-                            <label class="lbl">Acción</label>
-                            <select id="tipo" class="input-field w-full font-bold">
-                                <option value="ENTRADA">PRODUCCIÓN (+)</option>
-                                <option value="SOBRANTE">SOBRANTE (+)</option>
-                                <option value="SALIDA">VENTA/MERMA (-)</option>
-                            </select>
-                        </div>
-                        <div class="w-1/2">
-                            <label class="lbl">Formato</label>
-                            <select id="formato" class="input-field w-full bg-amber-50 border-amber-200 text-amber-900"><option value="manual_unidad">Unidad</option></select>
-                        </div>
-                    </div>
-
-                    <div>
-                        <label class="lbl">Cantidad</label>
-                        <input type="number" id="cantidad" step="0.001" required class="input-field w-full text-center text-3xl font-bold text-amber-600 py-3" placeholder="0">
-                    </div>
-
-                    <div class="flex gap-3">
-                        <div class="w-1/2">
-                            <label class="lbl">Operario</label>
-                            <select id="operario" class="input-field w-full"></select>
-                        </div>
-                        <div class="w-1/2">
-                            <label class="lbl">Fecha</label>
-                            <input type="datetime-local" id="fecha" required class="input-field w-full text-xs">
-                        </div>
-                    </div>
-
-                    <button type="submit" class="w-full bg-amber-600 text-white py-4 rounded-lg font-bold shadow-lg hover:bg-amber-700 transition active:scale-95 mt-2">
-                        CONFIRMAR CARGA
-                    </button>
-                </form>
-            </div>
-        </div>
-
-        <div id="vista-historial" class="vista hidden container mx-auto max-w-4xl">
-            <div class="flex justify-between items-center mb-2">
-                <h3 class="font-bold text-gray-700 text-sm">Historial de Movimientos</h3>
-                <button id="btn-toggle-historial" onclick="toggleModoHistorial()" class="bg-white border border-gray-300 text-gray-600 px-3 py-1 rounded text-xs font-bold shadow-sm hover:bg-gray-50">
-                    <i class="fas fa-layer-group mr-1"></i> Agrupar por Producto
-                </button>
-            </div>
-            <div id="contenedor-historial" class="space-y-2">
-                 </div>
-        </div>
-
-        <div id="vista-config" class="vista hidden container mx-auto max-w-lg space-y-6">
-            
-            <div class="bg-blue-50 border border-blue-200 p-3 rounded text-center text-blue-800 text-sm font-bold mb-4">
-                <i class="fas fa-user-shield mr-2"></i> Modo Administrador Activo
-            </div>
-
-            <div class="bg-white p-4 rounded-lg shadow border-l-4 border-blue-400">
-                <h3 class="font-bold text-gray-800 mb-1 text-sm">1. Editar Operarios</h3>
-                <p class="text-xs text-gray-400 mb-2">Un nombre por línea</p>
-                <textarea id="config-operarios" class="w-full border p-2 text-sm h-24 rounded bg-gray-50"></textarea>
-            </div>
-
-            <div class="bg-white p-4 rounded-lg shadow border-l-4 border-purple-400 space-y-4">
-                <h3 class="font-bold text-gray-800 mb-1 text-sm">2. Editar Listas de Productos (Categorías)</h3>
-                <p class="text-xs text-gray-400 mb-2">Formato: Nombre | Unidad | Alterno | Factor | Stock</p>
-                
-                <label class="lbl">Lista Panadería</label>
-                <textarea id="config-panaderia" class="w-full border p-2 text-xs font-mono h-20 rounded bg-gray-50"></textarea>
-                
-                <label class="lbl">Lista Pastelería</label>
-                <textarea id="config-pasteleria" class="w-full border p-2 text-xs font-mono h-20 rounded bg-gray-50"></textarea>
-                
-                <label class="lbl">Lista Cocina</label>
-                <textarea id="config-cocina" class="w-full border p-2 text-xs font-mono h-20 rounded bg-gray-50"></textarea>
-            </div>
-
-            <button onclick="guardarConfiguracion()" class="w-full bg-blue-600 text-white py-3 rounded font-bold text-sm shadow hover:bg-blue-700">
-                <i class="fas fa-save mr-2"></i>GUARDAR TODOS LOS CAMBIOS
-            </button>
-
-            <div class="pt-8 border-t mt-8">
-                <h4 class="font-bold text-red-700 mb-2 text-xs uppercase">Zona de Peligro</h4>
-                <button onclick="limpiarBaseDeDatos()" class="w-full bg-red-100 text-red-600 py-3 rounded border border-red-200 text-xs font-bold hover:bg-red-200">
-                    <i class="fas fa-trash mr-2"></i>RESETEO DE FÁBRICA (Borrar Todo)
-                </button>
-                <p class="text-center text-xs text-gray-400 mt-2">Esto borrará historial y pondrá stock en 0.</p>
-            </div>
-        </div>
-
-    </main>
-    
-    <style>
-        .lbl { display: block; font-size: 0.7rem; font-weight: 700; color: #6b7280; text-transform: uppercase; margin-bottom: 2px; }
-        .input-field { border: 1px solid #d1d5db; border-radius: 0.375rem; padding: 0.5rem; outline: none; transition: all 0.2s; }
-        .input-field:focus { border-color: #d97706; box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.2); }
-    </style>
-</body>
-</html>
+            if (!isAdminUnlocked) return alert("Acceso denegado. Desbloquee Admin en Config.");
+            if (!confirm("⚠️ ¿Borrar movimiento permanentemente? Esto afectará el stock.")) return;
+            try { await db.collection(COLL_MOVIMIENTOS).doc(
