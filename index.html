@@ -38,16 +38,14 @@
         let operariosGlobal = [];
         let movimientosGlobal = []; 
         let isAdminUnlocked = false; 
-        let modoHistorial = 'cronologico'; // 'cronologico' o 'agrupado'
+        let modoHistorial = 'cronologico'; 
         
         const COLL_MOVIMIENTOS = "movimientos"; 
         const COLL_CONFIG = "configuracion";
-        // Orden de categorías para respetar la carga
         const ORDEN_CATEGORIAS = ['panaderia', 'pasteleria', 'cocina'];
         const CATEGORIAS_NOMBRES = { panaderia: 'Panadería', pasteleria: 'Pastelería', cocina: 'Cocina' };
         
-        // --- UTILIDADES DE FECHA ---
-        
+        // --- UTILIDADES ---
         function obtenerFechaLocal() {
             const now = new Date();
             now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
@@ -63,13 +61,11 @@
         function establecerInputs() {
             const el = document.getElementById('fecha');
             if(el) el.value = obtenerFechaLocal();
-            
             const filtroPanel = document.getElementById('filtro-fecha-panel');
             if(filtroPanel && !filtroPanel.value) filtroPanel.value = obtenerFechaHoyYMD();
         }
 
-        // --- GESTIÓN DE CSV Y PRODUCTOS ---
-        
+        // --- CSV Y PRODUCTOS ---
         function getProductDefault(key) {
              if (key === 'panaderia') return `Media Luna Dulce | Unidad | Docena | 12 | 0\nMedia Luna Salada | Unidad | Docena | 12 | 0\nFactura Rellena | Unidad | Docena | 12 | 0\nPan Francés | Kg | Unidad | 0.5 | 0\nPan Rallado | Kg | - | 1 | 0\nLibritos | Kg | Docena | 0.3 | 0`;
              if (key === 'pasteleria') return `Tarta Frutal | Unidad | Porción | 6 | 0\nAlfajor de Maicena | Unidad | Bandeja | 10 | 0`;
@@ -80,7 +76,6 @@
         function procesarProductosCSV(csvText, categoria) {
             return csvText.split('\n').map(l => l.trim()).filter(l => l.length > 0).map((l, i) => {
                 const p = l.split('|').map(s => s.trim());
-                // Usamos el índice 'i' para garantizar que se respete el orden de la lista
                 return { 
                     id: `${categoria}_${String(i).padStart(3, '0')}`, 
                     categoria: categoria,
@@ -93,27 +88,21 @@
             });
         }
 
-        // --- CARGA INICIAL DE DATOS ---
-
         async function cargarConfiguracionGeneral() {
             try {
                 productosGlobal = [];
-                // Carga secuencial para respetar el orden estricto de las familias
                 for (const key of ORDEN_CATEGORIAS) {
                     const docRef = db.collection(COLL_CONFIG).doc(`productos_${key}`);
                     const docSnap = await docRef.get();
-                    
                     let csv = getProductDefault(key);
                     if (docSnap.exists) csv = docSnap.data().csv;
                     else await docRef.set({ csv: csv });
                     
                     const configEl = document.getElementById(`config-${key}`);
                     if(configEl) configEl.value = csv;
-                    
                     productosGlobal.push(...procesarProductosCSV(csv, key));
                 }
 
-                // Cargar Operarios
                 const docOp = await db.collection(COLL_CONFIG).doc("operarios_lista").get();
                 let txtOp = "Mañana\nTarde\nNoche";
                 if (docOp.exists) txtOp = docOp.data().lista;
@@ -121,14 +110,9 @@
 
                 const opEl = document.getElementById('config-operarios');
                 if(opEl) opEl.value = txtOp; 
-                
                 operariosGlobal = txtOp.split('\n').map(s => s.trim()).filter(s => s.length > 0);
                 llenarSelectOperarios();
-
-            } catch (e) {
-                console.error("Error al cargar config:", e);
-                alert("Error de conexión al cargar configuración.");
-            }
+            } catch (e) { console.error("Error config:", e); }
         }
 
         function llenarSelectOperarios() {
@@ -143,8 +127,6 @@
             if(actual) sel.value = actual;
         }
 
-        // --- ESCUCHA DE MOVIMIENTOS ---
-
         function escucharMovimientos() {
             db.collection(COLL_MOVIMIENTOS).orderBy("timestamp", "desc").onSnapshot((snapshot) => {
                 movimientosGlobal = [];
@@ -154,38 +136,26 @@
             });
         }
 
-        // ============================================================
-        // 2. LÓGICA PRINCIPAL (CÁLCULOS Y DASHBOARD)
-        // ============================================================
-
+        // --- CORE DEL SISTEMA (PANEL) ---
         window.actualizarPanelPrincipal = function() {
             const filtroFechaInput = document.getElementById('filtro-fecha-panel');
             const fechaSeleccionada = filtroFechaInput ? filtroFechaInput.value : obtenerFechaHoyYMD();
 
-            // Maps para acumular datos
-            const stockMap = {}; // Stock histórico acumulado (Real)
+            const stockMap = {}; 
             productosGlobal.forEach(p => stockMap[p.id] = p.stockInicial);
             
-            // Datos del día seleccionado
             const produccionDia = {};
             const descarteDia = {};
             const reutilizacionDia = {};
             
-            let totalProd = 0;
-            let totalDesc = 0;
-            let totalReut = 0;
+            let totalProd = 0, totalDesc = 0;
 
-            // Procesamos movimientos (reverse para calcular stock cronológicamente)
             [...movimientosGlobal].reverse().forEach(m => {
-                // 1. STOCK REAL (Siempre se calcula todo)
-                // ENTRADA suma, todo lo demás resta
                 if(m.tipo === 'ENTRADA') stockMap[m.productoId] += Math.abs(m.cantidadBase);
                 else stockMap[m.productoId] -= Math.abs(m.cantidadBase);
 
-                // 2. REPORTE DEL DÍA (Solo si coincide la fecha)
                 if (m.fecha.startsWith(fechaSeleccionada)) {
                     const cant = Math.abs(m.cantidadBase);
-                    
                     if (m.tipo === 'ENTRADA') { 
                         produccionDia[m.productoId] = (produccionDia[m.productoId] || 0) + cant;
                         totalProd += cant;
@@ -196,50 +166,41 @@
                     }
                     else if (m.tipo === 'REUTILIZACION') { 
                         reutilizacionDia[m.productoId] = (reutilizacionDia[m.productoId] || 0) + cant;
-                        totalReut += cant;
                     }
-                    // 'SALIDA' (Venta manual) no la sumamos a los KPIs de producción/merma, pero sí afecta el stock.
                 }
             });
 
-            // --- ACTUALIZAR UI ---
-
-            // A. Fecha en título
             const [yyyy, mm, dd] = fechaSeleccionada.split('-');
             const labelFecha = document.getElementById('label-fecha-tabla');
             if(labelFecha) labelFecha.innerText = `${dd}/${mm}/${yyyy}`;
 
-            // B. KPIs Superiores
-            document.getElementById('kpi-prod-total').innerText = totalProd.toFixed(0);
-            document.getElementById('kpi-descarte-total').innerText = totalDesc.toFixed(0);
+            const kpiProd = document.getElementById('kpi-prod-total');
+            if(kpiProd) kpiProd.innerText = totalProd.toFixed(0);
             
-            // Cálculo de porcentaje de pérdida (Descarte sobre Producción)
+            const kpiDesc = document.getElementById('kpi-descarte-total');
+            if(kpiDesc) kpiDesc.innerText = totalDesc.toFixed(0);
+            
             let porcentaje = 0;
             if(totalProd > 0) porcentaje = (totalDesc / totalProd) * 100;
             
             const kpiPorc = document.getElementById('kpi-porcentaje-merma');
-            kpiPorc.innerText = porcentaje.toFixed(1) + '%';
-            // Colores semáforo para el KPI
-            kpiPorc.className = "text-xl font-bold " + (porcentaje > 15 ? "text-red-600" : (porcentaje > 5 ? "text-amber-600" : "text-green-600"));
+            if(kpiPorc) {
+                kpiPorc.innerText = porcentaje.toFixed(1) + '%';
+                kpiPorc.className = "text-xl font-bold " + (porcentaje > 15 ? "text-red-600" : (porcentaje > 5 ? "text-amber-600" : "text-green-600"));
+            }
 
-            // C. Tabla Detallada (Iteramos productosGlobal para respetar ORDEN DE CONFIGURACIÓN)
             const tbody = document.getElementById('tabla-produccion-hoy');
             if (tbody) {
                 tbody.innerHTML = '';
                 let hayDatos = false;
-                
                 productosGlobal.forEach(p => {
                     const prod = produccionDia[p.id] || 0;
                     const desc = descarteDia[p.id] || 0;
                     const reut = reutilizacionDia[p.id] || 0;
                     
-                    // Solo mostramos si hubo movimiento hoy
                     if (prod > 0 || desc > 0 || reut > 0) {
                         hayDatos = true;
-                        // Cálculo Venta Estimada = Prod - Reutilizado - Tirado
-                        // Si da negativo (porque vendí stock viejo), mostramos el número real igual.
                         const ventaEst = prod - reut - desc;
-                        
                         tbody.innerHTML += `
                             <tr class="border-b border-gray-100 hover:bg-gray-50 text-xs sm:text-sm">
                                 <td class="py-2 pl-3 font-medium text-gray-800">${p.nombre}</td>
@@ -247,26 +208,18 @@
                                 <td class="py-2 text-center font-bold text-orange-500 border-l">${reut > 0 ? reut.toFixed(1) : '-'}</td>
                                 <td class="py-2 text-center font-bold text-red-600 border-l bg-red-50">${desc > 0 ? desc.toFixed(1) : '-'}</td>
                                 <td class="py-2 text-center font-bold text-blue-700 border-l">${ventaEst.toFixed(1)} <span class="text-[10px] text-gray-400 font-normal">${p.unidad}</span></td>
-                            </tr>
-                        `;
+                            </tr>`;
                     }
                 });
-
-                if (!hayDatos) {
-                    tbody.innerHTML = '<tr><td colspan="5" class="text-center py-6 text-gray-400 italic text-xs">Sin movimientos en esta fecha</td></tr>';
-                }
+                if (!hayDatos) tbody.innerHTML = '<tr><td colspan="5" class="text-center py-6 text-gray-400 italic text-xs">Sin movimientos en esta fecha</td></tr>';
             }
 
-            // D. Tarjetas de Stock Actual (Siempre visibles, ordenadas por Configuración)
             const grid = document.getElementById('grid-stock');
             if (grid) {
                 grid.innerHTML = '';
                 productosGlobal.forEach(p => {
                     const actual = stockMap[p.id] || 0;
-                    // Filtro visual opcional: Mostrar solo si hay stock o si es negativo
-                    // O mostrar todo. Mostraremos todo para facilitar control.
                     const borde = actual < 0 ? 'border-red-500' : (actual < 5 ? 'border-amber-400' : 'border-gray-200');
-                    
                     grid.innerHTML += `
                         <div class="bg-white p-2 rounded border-l-4 ${borde} shadow-sm flex justify-between items-center">
                             <div class="overflow-hidden pr-2">
@@ -277,12 +230,9 @@
                                 <span class="block text-sm font-bold ${actual < 0 ? 'text-red-600' : 'text-gray-800'}">${actual.toFixed(1)}</span>
                                 <span class="text-[9px] text-gray-500">${p.unidad}</span>
                             </div>
-                        </div>
-                    `;
+                        </div>`;
                 });
             }
-            
-            // E. Gráfico
             actualizarGraficos(produccionDia, productosGlobal);
         }
         
@@ -290,18 +240,14 @@
         function actualizarGraficos(dataMap, productos) {
             const canvas = document.getElementById('graficoProduccion');
             if (!canvas) return;
-            
             const labels = [];
             const dataValues = [];
-            
-            // Respetamos orden de productos para los colores del gráfico
             productos.forEach(p => {
                 if(dataMap[p.id] > 0) {
                     labels.push(p.nombre);
                     dataValues.push(dataMap[p.id]);
                 }
             });
-
             if (chartInstance) { chartInstance.destroy(); }
             if (dataValues.length === 0) return;
 
@@ -315,22 +261,13 @@
                         borderWidth: 1
                     }]
                 },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { position: 'right', labels: { boxWidth: 8, font: { size: 9 } } } }
-                }
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { boxWidth: 8, font: { size: 9 } } } } }
             });
         }
-
-        // ============================================================
-        // 3. REGISTRO DE MOVIMIENTOS (CARGA)
-        // ============================================================
 
         window.guardarMovimiento = function(e) {
             e.preventDefault();
             if (!currentUser) return alert("Esperando conexión...");
-            
             const btn = e.target.querySelector('button[type="submit"]');
             btn.disabled = true; btn.innerText = "Guardando...";
 
@@ -342,40 +279,31 @@
             const operario = document.getElementById('operario').value;
             const fecha = document.getElementById('fecha').value;
 
-            if(!prod) { btn.disabled=false; btn.innerText="CONFIRMAR"; return alert("Producto no válido."); }
-            if(isNaN(cantidad) || cantidad <= 0) { btn.disabled=false; btn.innerText="CONFIRMAR"; return alert("Cantidad inválida."); }
+            if(!prod || isNaN(cantidad) || cantidad <= 0) { 
+                btn.disabled=false; btn.innerText="CONFIRMAR"; 
+                return alert("Datos inválidos."); 
+            }
 
-            // Lógica de Unidades
             let cantBase = cantidad;
             let formatoTexto = 'Unidad';
             if (formato === 'manual_docena') { cantBase = cantidad * 12; formatoTexto = 'Docena'; }
             else if (formato === 'manual_kg') { cantBase = cantidad; formatoTexto = 'Kg'; }
             else if (formato === 'alterno') { cantBase = cantidad * prod.factor; formatoTexto = prod.alterno; }
 
-            // Lógica de Signo para Stock
-            // ENTRADA (+), el resto (REUTILIZACION, DESCARTE, SALIDA) son restas (-)
             let cantBaseCalculo = (tipo === 'ENTRADA') ? cantBase : -Math.abs(cantBase);
 
             db.collection(COLL_MOVIMIENTOS).add({
-                productoId: prodId, 
-                productoNombre: prod.nombre,
-                tipo: tipo, 
-                cantidadOriginal: cantidad, 
-                formatoUsado: formatoTexto,
-                cantidadBase: cantBaseCalculo, 
-                operario: operario, 
-                fecha: fecha,
+                productoId: prodId, productoNombre: prod.nombre, tipo: tipo, 
+                cantidadOriginal: cantidad, formatoUsado: formatoTexto,
+                cantidadBase: cantBaseCalculo, operario: operario, fecha: fecha,
                 timestamp: new Date().toISOString()
             }).then(() => {
-                // Notificación Toast
-                mostrarToast("Movimiento registrado correctamente");
+                mostrarToast("Movimiento registrado");
                 e.target.reset();
                 establecerInputs();
                 actualizarFormato(); 
                 document.getElementById('operario').value = operario; 
-            }).catch((err) => {
-                alert("Error: " + err.message);
-            }).finally(() => {
+            }).catch((err) => { alert("Error: " + err.message); }).finally(() => {
                 btn.disabled = false; btn.innerText = "CONFIRMAR CARGA";
             });
         }
@@ -387,15 +315,11 @@
             document.body.appendChild(toast);
             setTimeout(() => toast.remove(), 2500);
         }
-
-        // --- INTERFAZ DINÁMICA DE CARGA ---
         
         window.filtrarProductos = function(categoria) {
             const sel = document.getElementById('producto');
             if (!sel) return;
             sel.innerHTML = '<option value="" disabled selected>Seleccione producto...</option>';
-            
-            // Filtramos manteniendo el orden global
             const filtrados = productosGlobal.filter(p => p.categoria === categoria);
 
             document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('bg-amber-600', 'text-white', 'shadow-md'));
@@ -416,7 +340,6 @@
             if (!s) return;
             s.innerHTML = '';
             
-            // Color coding para el select de tipo
             if(tipo) {
                 tipo.className = "input-field w-full font-bold border-2 text-sm ";
                 if(tipo.value === 'ENTRADA') tipo.classList.add('border-green-500', 'text-green-700');
@@ -441,18 +364,343 @@
             }
         }
 
-        // ============================================================
-        // 4. HISTORIAL Y MODOS
-        // ============================================================
-        
+        // --- HISTORIAL ---
         window.toggleModoHistorial = function() {
             modoHistorial = modoHistorial === 'cronologico' ? 'agrupado' : 'cronologico';
             const btn = document.getElementById('btn-toggle-historial');
-            if(btn) btn.innerHTML = modoHistorial === 'cronologico' ? '<i class="fas fa-layer-group mr-1"></i> Agrupar por Producto' : '<i class="fas fa-clock mr-1"></i> Ver Cronológico';
+            if(btn) btn.innerHTML = modoHistorial === 'cronologico' ? '<i class="fas fa-layer-group mr-1"></i> Agrupar' : '<i class="fas fa-clock mr-1"></i> Cronológico';
             actualizarHistorialVisual();
         }
 
         window.eliminarMovimiento = async function(id) {
             if (!isAdminUnlocked) return alert("Acceso denegado. Desbloquee Admin en Config.");
-            if (!confirm("⚠️ ¿Borrar movimiento permanentemente? Esto afectará el stock.")) return;
-            try { await db.collection(COLL_MOVIMIENTOS).doc(
+            if (!confirm("⚠️ ¿Borrar movimiento permanentemente?")) return;
+            try { await db.collection(COLL_MOVIMIENTOS).doc(id).delete(); } 
+            catch (e) { alert(e.message); }
+        }
+
+        function actualizarHistorialVisual() {
+            const div = document.getElementById('contenedor-historial');
+            if (!div) return;
+            div.innerHTML = '';
+
+            if (movimientosGlobal.length === 0) {
+                div.innerHTML = '<p class="text-gray-400 text-center py-4">Sin movimientos</p>';
+                return;
+            }
+
+            if (modoHistorial === 'cronologico') {
+                const gruposDia = {};
+                movimientosGlobal.forEach(m => {
+                    const dia = m.fecha.slice(0,10);
+                    if(!gruposDia[dia]) gruposDia[dia] = [];
+                    gruposDia[dia].push(m);
+                });
+                const diasOrdenados = Object.keys(gruposDia).sort().reverse();
+
+                diasOrdenados.forEach(dia => {
+                    const [yyyy, mm, dd] = dia.split('-');
+                    let html = `<div class="mb-4"><h4 class="bg-gray-200 px-3 py-1 text-xs font-bold text-gray-600 rounded mb-2 sticky top-0">${dd}/${mm}/${yyyy}</h4><div class="bg-white border rounded shadow-sm divide-y">`;
+                    
+                    gruposDia[dia].forEach(m => {
+                        const hora = m.fecha.slice(11,16);
+                        let color = 'text-gray-600', etiqueta = '';
+                        if(m.tipo === 'ENTRADA') { color = 'text-green-600'; etiqueta="PROD"; }
+                        else if(m.tipo === 'DESCARTE') { color = 'text-red-600'; etiqueta="DESC"; }
+                        else if(m.tipo === 'REUTILIZACION') { color = 'text-orange-500'; etiqueta="REUT"; }
+                        else { color = 'text-blue-600'; etiqueta="VENTA"; }
+
+                        const btnDel = isAdminUnlocked ? `<button onclick="eliminarMovimiento('${m.id}')" class="text-red-300 ml-2"><i class="fas fa-times"></i></button>` : '';
+
+                        html += `
+                            <div class="p-2 flex justify-between items-center hover:bg-gray-50">
+                                <div class="flex items-center gap-3 overflow-hidden">
+                                    <span class="text-xs text-gray-400 font-mono">${hora}</span>
+                                    <div>
+                                        <div class="font-bold text-sm text-gray-700 truncate w-40 sm:w-64">${m.productoNombre}</div>
+                                        <div class="text-[10px] text-gray-400">${m.operario}</div>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-[10px] font-bold bg-gray-100 px-1 rounded text-gray-500">${etiqueta}</span>
+                                    <span class="font-bold ${color} text-sm w-16 text-right">${m.tipo === 'ENTRADA' ? '+' : '-'}${Math.abs(m.cantidadOriginal)}</span>
+                                    ${btnDel}
+                                </div>
+                            </div>`;
+                    });
+                    html += `</div></div>`;
+                    div.innerHTML += html;
+                });
+            } else {
+                const gruposProd = {};
+                movimientosGlobal.forEach(m => {
+                    if (!gruposProd[m.productoId]) gruposProd[m.productoId] = [];
+                    gruposProd[m.productoId].push(m);
+                });
+
+                productosGlobal.forEach(prod => {
+                    if (gruposProd[prod.id] && gruposProd[prod.id].length > 0) {
+                        const movs = gruposProd[prod.id];
+                        let itemsHtml = '';
+                        movs.forEach(m => {
+                             let color = 'text-gray-600';
+                             if(m.tipo === 'ENTRADA') color = 'text-green-600';
+                             else if(m.tipo === 'DESCARTE') color = 'text-red-600';
+                             else if(m.tipo === 'REUTILIZACION') color = 'text-orange-500';
+                             
+                             const fechaFmt = `${m.fecha.slice(8,10)}/${m.fecha.slice(5,7)} ${m.fecha.slice(11,16)}`;
+                             const btnDel = isAdminUnlocked ? `<button onclick="eliminarMovimiento('${m.id}')" class="text-red-300 ml-2"><i class="fas fa-trash-alt"></i></button>` : '';
+                             
+                             itemsHtml += `<div class="flex justify-between text-xs border-b border-gray-100 py-1 px-2">
+                                <span class="text-gray-500">${fechaFmt} - ${m.operario}</span>
+                                <span class="font-bold ${color}">${m.tipo === 'ENTRADA' ? '+' : '-'}${Math.abs(m.cantidadOriginal)} ${m.formatoUsado}${btnDel}</span>
+                             </div>`;
+                        });
+                        div.innerHTML += `
+                            <div class="bg-white border rounded mb-2 overflow-hidden shadow-sm">
+                                <div class="bg-amber-50 p-2 font-bold text-amber-900 text-xs flex justify-between">
+                                    <span>${prod.nombre}</span>
+                                    <span class="bg-amber-200 px-2 rounded-full">${movs.length}</span>
+                                </div>
+                                <div>${itemsHtml}</div>
+                            </div>`;
+                    }
+                });
+            }
+        }
+
+        // --- ADMIN ---
+        function verificarAdmin() {
+            if (isAdminUnlocked) return true;
+            if (prompt("Contraseña Administrador:") === CLAVE_ADMIN) {
+                isAdminUnlocked = true;
+                return true;
+            }
+            return false;
+        }
+
+        window.cambiarVista = function(id) {
+            if (id === 'vista-config' && !verificarAdmin()) return;
+            
+            const btnConf = document.getElementById('btn-vista-config');
+            if(isAdminUnlocked && btnConf) {
+                 btnConf.innerHTML = '<i class="fas fa-unlock block mb-1 text-lg"></i>Admin';
+                 btnConf.classList.add('text-green-200');
+            }
+
+            document.querySelectorAll('.vista').forEach(d => d.classList.add('hidden'));
+            document.getElementById(id).classList.remove('hidden');
+            
+            document.querySelectorAll('.nav-btn').forEach(b => {
+                b.classList.remove('border-amber-300', 'text-white');
+                b.classList.add('border-transparent', 'text-amber-100');
+            });
+            document.getElementById('btn-' + id).classList.add('border-amber-300', 'text-white');
+            
+            if(id === 'vista-panel') actualizarPanelPrincipal(); 
+            if(id === 'vista-carga') filtrarProductos('panaderia'); 
+        }
+        
+        window.guardarConfiguracion = async function() {
+            if (!verificarAdmin()) return;
+            try {
+                for (const key of ORDEN_CATEGORIAS) {
+                    const val = document.getElementById(`config-${key}`).value;
+                    await db.collection(COLL_CONFIG).doc(`productos_${key}`).set({ csv: val });
+                }
+                const ops = document.getElementById('config-operarios').value;
+                await db.collection(COLL_CONFIG).doc("operarios_lista").set({ lista: ops });
+                await cargarConfiguracionGeneral();
+                alert("Guardado.");
+            } catch(e) { alert(e.message); }
+        }
+
+        window.limpiarBaseDeDatos = async function() {
+            if (!verificarAdmin()) return;
+            if (!confirm("⚠️ PELIGRO: ¿Borrar TODO?")) return;
+            try {
+                const movs = await db.collection(COLL_MOVIMIENTOS).get();
+                const batch = db.batch();
+                movs.docs.forEach(doc => batch.delete(doc.ref));
+                await batch.commit();
+                alert("Reiniciado.");
+                window.location.reload();
+            } catch (e) { alert(e.message); }
+        }
+
+        // --- INICIO ---
+        document.addEventListener('DOMContentLoaded', () => {
+            auth.signInAnonymously().catch(e => console.error(e));
+            auth.onAuthStateChanged(user => {
+                if (user) {
+                    currentUser = user;
+                    document.getElementById('status-icon').classList.replace('text-red-500', 'text-green-400');
+                    cargarConfiguracionGeneral().then(() => {
+                        escucharMovimientos();
+                        cambiarVista('vista-panel');
+                    });
+                }
+            });
+            establecerInputs();
+        });
+    </script>
+</head>
+<body class="bg-gray-100 h-screen flex flex-col overflow-hidden text-gray-800 font-sans">
+
+    <header class="bg-amber-800 text-white shadow-md flex-none z-20">
+        <div class="container mx-auto px-4 py-3 flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <div class="bg-white p-2 rounded-full shadow-inner">
+                    <i class="fas fa-bread-slice text-amber-600 text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-lg leading-tight tracking-tight">Control Producción</h1>
+                    <p class="text-[10px] text-amber-200 uppercase tracking-widest">Gestión Stock</p>
+                </div>
+            </div>
+            <i id="status-icon" class="fas fa-circle text-red-500 text-xs"></i>
+        </div>
+    </header>
+
+    <div class="bg-amber-900 shadow-inner flex-none">
+        <div class="container mx-auto flex">
+            <button id="btn-vista-panel" onclick="cambiarVista('vista-panel')" class="nav-btn flex-1 py-3 text-center border-b-4 border-amber-300 text-white font-bold text-xs sm:text-sm transition"><i class="fas fa-chart-pie block mb-1 text-lg"></i>Resumen</button>
+            <button id="btn-vista-carga" onclick="cambiarVista('vista-carga')" class="nav-btn flex-1 py-3 text-center border-b-4 border-transparent text-amber-100 font-medium text-xs sm:text-sm transition"><i class="fas fa-plus-circle block mb-1 text-lg"></i>Cargar</button>
+            <button id="btn-vista-historial" onclick="cambiarVista('vista-historial')" class="nav-btn flex-1 py-3 text-center border-b-4 border-transparent text-amber-100 font-medium text-xs sm:text-sm transition"><i class="fas fa-history block mb-1 text-lg"></i>Historial</button>
+            <button id="btn-vista-config" onclick="cambiarVista('vista-config')" class="nav-btn flex-1 py-3 text-center border-b-4 border-transparent text-amber-100 font-medium text-xs sm:text-sm transition"><i class="fas fa-lock block mb-1 text-lg"></i>Config</button>
+        </div>
+    </div>
+
+    <main class="flex-1 overflow-y-auto bg-gray-50 p-2 sm:p-4 pb-20">
+
+        <div id="vista-panel" class="vista container mx-auto max-w-5xl space-y-4">
+            <div class="bg-white p-3 rounded-lg shadow-sm border border-gray-200 flex justify-between items-center">
+                <div class="flex items-center gap-2">
+                    <span class="text-xs font-bold text-gray-500 uppercase"><i class="far fa-calendar-alt mr-1"></i>Día:</span>
+                    <input type="date" id="filtro-fecha-panel" onchange="actualizarPanelPrincipal()" class="border rounded px-2 py-1 text-sm font-bold text-gray-700 bg-gray-50 outline-none">
+                </div>
+                <button onclick="actualizarPanelPrincipal()" class="text-amber-600 p-2"><i class="fas fa-sync-alt"></i></button>
+            </div>
+
+            <div class="grid grid-cols-3 gap-2">
+                <div class="bg-white p-3 rounded shadow-sm border-l-4 border-green-500">
+                    <p class="text-[10px] text-gray-400 uppercase font-bold">Producción</p>
+                    <p class="text-xl font-bold text-gray-800" id="kpi-prod-total">0</p>
+                </div>
+                <div class="bg-white p-3 rounded shadow-sm border-l-4 border-red-500">
+                    <p class="text-[10px] text-gray-400 uppercase font-bold">Descarte</p>
+                    <p class="text-xl font-bold text-red-600" id="kpi-descarte-total">0</p>
+                </div>
+                <div class="bg-white p-3 rounded shadow-sm border-l-4 border-gray-500">
+                    <p class="text-[10px] text-gray-400 uppercase font-bold">% Pérdida</p>
+                    <p class="text-xl font-bold text-gray-800" id="kpi-porcentaje-merma">0%</p>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+                <div class="bg-gray-50 px-4 py-2 border-b flex justify-between items-center">
+                    <h2 class="font-bold text-gray-700 text-sm">Detalle: <span id="label-fecha-tabla" class="text-amber-600">Hoy</span></h2>
+                    <div class="flex gap-2 text-[9px] sm:text-[10px] font-bold uppercase">
+                        <span class="text-green-600">Prod</span> | <span class="text-orange-500">Reut</span> | <span class="text-red-600">Desc</span>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-gray-100 text-[10px] text-gray-500 uppercase border-b">
+                            <tr>
+                                <th class="text-left py-2 pl-4">Producto</th>
+                                <th class="text-center py-2 w-12 text-green-700">Prod</th>
+                                <th class="text-center py-2 w-12 text-orange-600">Reut</th>
+                                <th class="text-center py-2 w-12 text-red-600 bg-red-50">Desc</th>
+                                <th class="text-center py-2 w-16 text-blue-700">Vta.Est</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabla-produccion-hoy" class="divide-y divide-gray-100"></tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <h3 class="font-bold text-gray-700 text-xs mb-2 uppercase">Stock Físico Actual</h3>
+                    <div id="grid-stock" class="grid grid-cols-2 gap-2 max-h-60 overflow-y-auto pr-1 pb-2"></div>
+                </div>
+                <div class="bg-white p-2 rounded shadow h-60 border">
+                    <h3 class="font-bold text-gray-700 text-xs mb-1 text-center">Distribución Producción</h3>
+                    <div class="h-48 relative"><canvas id="graficoProduccion"></canvas></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="vista-carga" class="vista hidden container mx-auto max-w-md">
+            <div class="bg-white p-4 rounded-lg shadow-lg border-t-4 border-amber-500 space-y-4">
+                <h2 class="text-lg font-bold text-gray-800 text-center border-b pb-2">Nuevo Movimiento</h2>
+                <div class="flex justify-between bg-gray-100 p-1 rounded-lg gap-1">
+                    <button id="btn-cat-panaderia" onclick="filtrarProductos('panaderia')" class="cat-btn flex-1 py-2 text-[10px] uppercase font-bold rounded hover:bg-amber-100">Panadería</button>
+                    <button id="btn-cat-pasteleria" onclick="filtrarProductos('pasteleria')" class="cat-btn flex-1 py-2 text-[10px] uppercase font-bold rounded hover:bg-amber-100">Pastelería</button>
+                    <button id="btn-cat-cocina" onclick="filtrarProductos('cocina')" class="cat-btn flex-1 py-2 text-[10px] uppercase font-bold rounded hover:bg-amber-100">Cocina</button>
+                </div>
+                <form onsubmit="guardarMovimiento(event)" class="space-y-3">
+                    <div>
+                        <label class="block text-[10px] font-bold text-gray-400 uppercase">Producto</label>
+                        <select id="producto" onchange="actualizarFormato()" required class="input-field w-full bg-gray-50 border p-2 rounded"></select>
+                    </div>
+                    <div class="flex gap-2">
+                        <div class="w-1/2">
+                            <label class="block text-[10px] font-bold text-gray-400 uppercase">Acción</label>
+                            <select id="tipo" onchange="actualizarFormato()" class="input-field w-full p-2 rounded border font-bold">
+                                <option value="ENTRADA">🟢 PRODUCCIÓN (+)</option>
+                                <option value="DESCARTE">🔴 DESCARTE (-)</option>
+                                <option value="REUTILIZACION">🟠 REUTILIZACIÓN (-)</option>
+                                <option value="SALIDA">🔵 VENTA / SALIDA (-)</option>
+                            </select>
+                        </div>
+                        <div class="w-1/2">
+                            <label class="block text-[10px] font-bold text-gray-400 uppercase">Formato</label>
+                            <select id="formato" class="input-field w-full bg-amber-50 text-amber-900 p-2 rounded border"></select>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-gray-400 uppercase">Cantidad</label>
+                        <input type="number" id="cantidad" step="0.01" required class="w-full text-center text-3xl font-bold text-amber-600 border rounded py-2 outline-none" placeholder="0">
+                    </div>
+                    <div class="flex gap-2">
+                        <div class="w-1/2">
+                            <label class="block text-[10px] font-bold text-gray-400 uppercase">Operario</label>
+                            <select id="operario" class="w-full border p-2 rounded bg-gray-50 text-sm"></select>
+                        </div>
+                        <div class="w-1/2">
+                            <label class="block text-[10px] font-bold text-gray-400 uppercase">Fecha Real</label>
+                            <input type="datetime-local" id="fecha" required class="w-full border p-2 rounded bg-gray-50 text-xs">
+                        </div>
+                    </div>
+                    <button type="submit" class="w-full bg-amber-600 text-white py-3 rounded-lg font-bold shadow hover:bg-amber-700 transition active:scale-95">CONFIRMAR CARGA</button>
+                </form>
+            </div>
+        </div>
+
+        <div id="vista-historial" class="vista hidden container mx-auto max-w-xl">
+            <div class="flex justify-between items-center mb-3">
+                <h3 class="font-bold text-gray-700 text-sm">Historial</h3>
+                <button id="btn-toggle-historial" onclick="toggleModoHistorial()" class="bg-white border text-gray-600 px-3 py-1 rounded text-xs font-bold shadow-sm hover:bg-gray-50"><i class="fas fa-layer-group mr-1"></i> Agrupar</button>
+            </div>
+            <div id="contenedor-historial"></div>
+        </div>
+
+        <div id="vista-config" class="vista hidden container mx-auto max-w-lg space-y-4">
+            <div class="bg-blue-50 text-blue-800 p-2 rounded text-center text-xs font-bold border border-blue-200"><i class="fas fa-cog"></i> Configuración</div>
+            <div class="space-y-1">
+                <label class="text-[10px] font-bold text-gray-500 uppercase">Operarios</label>
+                <textarea id="config-operarios" class="w-full border p-2 text-xs rounded h-16"></textarea>
+            </div>
+            <div class="space-y-2">
+                <p class="text-xs font-bold text-gray-700 border-b pb-1">Productos (Orden Fijo)</p>
+                <div><label class="text-[10px] font-bold text-amber-600">PANADERÍA</label><textarea id="config-panaderia" class="w-full border p-2 text-[10px] font-mono rounded h-24 bg-gray-50"></textarea></div>
+                <div><label class="text-[10px] font-bold text-pink-600">PASTELERÍA</label><textarea id="config-pasteleria" class="w-full border p-2 text-[10px] font-mono rounded h-24 bg-gray-50"></textarea></div>
+                <div><label class="text-[10px] font-bold text-green-600">COCINA</label><textarea id="config-cocina" class="w-full border p-2 text-[10px] font-mono rounded h-24 bg-gray-50"></textarea></div>
+            </div>
+            <button onclick="guardarConfiguracion()" class="w-full bg-blue-600 text-white py-3 rounded font-bold text-sm shadow">GUARDAR CAMBIOS</button>
+        </div>
+    </main>
+</body>
+</html>
