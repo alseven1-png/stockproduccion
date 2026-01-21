@@ -516,20 +516,46 @@
             if(id === 'vista-historial') actualizarHistorialVisual(); 
         }
         
+       // ==========================================
+        // REEMPLAZAR ESTA FUNCIÓN EN TU CÓDIGO HTML
+        // ==========================================
         window.guardarConfiguracion = async function() {
             if (!verificarAdmin()) return;
+            
+            // Botón en estado de carga
+            const btn = document.querySelector('button[onclick="guardarConfiguracion()"]');
+            const txtOriginal = btn.innerText;
+            btn.innerText = "GUARDANDO Y SINCRONIZANDO...";
+            btn.disabled = true;
+
             try {
                 for (const key of ORDEN_CATEGORIAS) {
                     const val = document.getElementById(`config-${key}`).value;
-                    await db.collection(COLL_CONFIG).doc(`productos_${key}`).set({ csv: val });
+                    
+                    // 1. Convertimos el texto CSV a Objetos limpios AQUÍ (en la web)
+                    // para que Python no tenga que adivinar.
+                    const listaLimpia = procesarProductosCSV(val, key); 
+
+                    // 2. Guardamos AMBOS: el CSV (para que tú edites) y la Lista (para Python)
+                    await db.collection(COLL_CONFIG).doc(`productos_${key}`).set({ 
+                        csv: val,
+                        json_data: listaLimpia, // <--- ESTO ES LO NUEVO Y CRÍTICO
+                        ultima_actualizacion: new Date().toISOString()
+                    });
                 }
+                
                 const ops = document.getElementById('config-operarios').value;
                 await db.collection(COLL_CONFIG).doc("operarios_lista").set({ lista: ops });
+                
                 await cargarConfiguracionGeneral();
-                alert("Guardado.");
-            } catch(e) { alert(e.message); }
+                alert("✅ Guardado y Sincronizado correctamente con el sistema POS.");
+            } catch(e) { 
+                alert("Error: " + e.message); 
+            } finally {
+                btn.innerText = txtOriginal;
+                btn.disabled = false;
+            }
         }
-
         window.limpiarBaseDeDatos = async function() {
             if (!verificarAdmin()) return;
             if (!confirm("⚠️ PELIGRO: ¿Borrar TODO?")) return;
