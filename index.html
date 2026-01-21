@@ -164,8 +164,6 @@
                             produccionDia[m.productoId] = (produccionDia[m.productoId] || 0) + cant;
                             totalProd += cant;
                         } 
-                        // **CORRECCIÓN CLAVE:**
-                        // Si es DESCARTE (nuevo) O es SOBRANTE (viejo), lo sumamos a la columna DESCARTE
                         else if (m.tipo === 'DESCARTE' || m.tipo === 'SOBRANTE') { 
                             descarteDia[m.productoId] = (descarteDia[m.productoId] || 0) + cant;
                             totalDesc += cant;
@@ -419,7 +417,6 @@
                         else if(m.tipo === 'REUTILIZACION') { color = 'text-orange-500'; etiqueta="REUT"; }
                         else { color = 'text-blue-600'; etiqueta="VENTA"; }
 
-                        // Corrección: Mismo tachito para todos
                         const btnDel = isAdminUnlocked ? `<button onclick="eliminarMovimiento('${m.id}')" class="text-red-400 hover:text-red-600 ml-2"><i class="fas fa-trash-alt"></i></button>` : '';
 
                         html += `
@@ -460,7 +457,6 @@
                              else if(m.tipo === 'REUTILIZACION') color = 'text-orange-500';
                              
                              const fechaFmt = `${m.fecha.slice(8,10)}/${m.fecha.slice(5,7)} ${m.fecha.slice(11,16)}`;
-                             // Corrección: Mismo tachito para todos
                              const btnDel = isAdminUnlocked ? `<button onclick="eliminarMovimiento('${m.id}')" class="text-red-400 hover:text-red-600 ml-2"><i class="fas fa-trash-alt"></i></button>` : '';
                              
                              itemsHtml += `<div class="flex justify-between text-xs border-b border-gray-100 py-1 px-2">
@@ -516,15 +512,14 @@
             if(id === 'vista-historial') actualizarHistorialVisual(); 
         }
         
-       // ==========================================
-        // REEMPLAZAR ESTA FUNCIÓN EN TU CÓDIGO HTML
-        // ==========================================
+        // =========================================================================
+        // ⭐ FUNCIÓN ACTUALIZADA: GUARDA Y CREA EL ENLACE PARA PYTHON ⭐
+        // =========================================================================
         window.guardarConfiguracion = async function() {
             if (!verificarAdmin()) return;
             
-            // Botón en estado de carga
-            const btn = document.querySelector('button[onclick="guardarConfiguracion()"]');
-            const txtOriginal = btn.innerText;
+            const btn = document.querySelector('#vista-config button'); // El botón de guardar
+            const textoOriginal = btn.innerText;
             btn.innerText = "GUARDANDO Y SINCRONIZANDO...";
             btn.disabled = true;
 
@@ -532,14 +527,12 @@
                 for (const key of ORDEN_CATEGORIAS) {
                     const val = document.getElementById(`config-${key}`).value;
                     
-                    // 1. Convertimos el texto CSV a Objetos limpios AQUÍ (en la web)
-                    // para que Python no tenga que adivinar.
-                    const listaLimpia = procesarProductosCSV(val, key); 
+                    // AQUI OCURRE LA MAGIA: Convertimos el texto a Objetos para Python
+                    const listaLimpia = procesarProductosCSV(val, key);
 
-                    // 2. Guardamos AMBOS: el CSV (para que tú edites) y la Lista (para Python)
                     await db.collection(COLL_CONFIG).doc(`productos_${key}`).set({ 
                         csv: val,
-                        json_data: listaLimpia, // <--- ESTO ES LO NUEVO Y CRÍTICO
+                        json_data: listaLimpia, // <--- ESTO ES LO QUE BUSCA PYTHON
                         ultima_actualizacion: new Date().toISOString()
                     });
                 }
@@ -548,14 +541,15 @@
                 await db.collection(COLL_CONFIG).doc("operarios_lista").set({ lista: ops });
                 
                 await cargarConfiguracionGeneral();
-                alert("✅ Guardado y Sincronizado correctamente con el sistema POS.");
+                alert("✅ Guardado y Sincronizado correctamente con el Punto de Venta.");
             } catch(e) { 
                 alert("Error: " + e.message); 
             } finally {
-                btn.innerText = txtOriginal;
+                btn.innerText = textoOriginal;
                 btn.disabled = false;
             }
         }
+
         window.limpiarBaseDeDatos = async function() {
             if (!verificarAdmin()) return;
             if (!confirm("⚠️ PELIGRO: ¿Borrar TODO?")) return;
