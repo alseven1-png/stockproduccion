@@ -241,6 +241,23 @@
                 });
             }
             actualizarGraficos(produccionDia, productosGlobal);
+            // ... (código existente de actualizarGraficos) ...
+            actualizarGraficos(produccionDia, productosGlobal);
+
+            // ============================================================
+            // 🚀 NUEVO: GUARDAR FOTO RÁPIDA PARA PYTHON (SNAPSHOT)
+            // ============================================================
+            const snapshotParaPython = {};
+            productosGlobal.forEach(p => {
+                snapshotParaPython[p.id] = stockMap[p.id] || 0;
+            });
+            
+            // Guardamos esto en un solo documento ligero
+            db.collection('configuracion').doc('stock_snapshot').set({
+                mapa: snapshotParaPython,
+                ultima_actualizacion: new Date().toISOString()
+            }, { merge: true }).then(() => console.log("⚡ Snapshot actualizado"));
+            // ============================================================
         }
         
         let chartInstance = null;
