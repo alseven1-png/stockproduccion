@@ -3,343 +3,429 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sistema de Gestión - Producción</title>
+    <title>Control de Producción - GASTRO</title>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+    
     <style>
-        body { font-family: 'Segoe UI', sans-serif; background-color: #f0f2f5; margin: 0; padding: 0; }
-        
-        /* ENCABEZADO */
-        header { background-color: #333; color: white; padding: 15px; text-align: center; }
-        header h1 { margin: 0; font-size: 1.5rem; }
+        :root {
+            --primary: #4a90e2;
+            --success: #27ae60;
+            --danger: #c0392b;
+            --dark: #2c3e50;
+            --light: #ecf0f1;
+            --white: #ffffff;
+        }
 
-        /* PESTAÑAS DE NAVEGACIÓN */
-        .tabs { display: flex; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 20px; }
-        .tab { flex: 1; padding: 15px; text-align: center; cursor: pointer; font-weight: bold; color: #555; border-bottom: 3px solid transparent; transition: 0.3s; }
-        .tab:hover { background-color: #f8f9fa; color: #007bff; }
-        .tab.active { border-bottom: 3px solid #007bff; color: #007bff; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background-color: #f4f7f6; margin: 0; color: #333; }
 
-        /* CONTENEDOR */
-        .container { max-width: 900px; margin: 0 auto; padding: 0 15px; display: none; }
-        .container.active { display: block; }
+        /* HEADER */
+        header { background-color: var(--dark); color: var(--white); padding: 1rem; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        header h1 { margin: 0; font-size: 1.5rem; letter-spacing: 1px; }
+
+        /* NAVEGACIÓN */
+        .nav-container { background: var(--white); box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        .tabs { display: flex; justify-content: center; list-style: none; padding: 0; margin: 0; max-width: 800px; margin: 0 auto; }
+        .tab { padding: 15px 25px; cursor: pointer; font-weight: 600; color: #7f8c8d; border-bottom: 3px solid transparent; transition: all 0.3s ease; }
+        .tab:hover { color: var(--primary); background: #f8f9fa; }
+        .tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+
+        /* CONTENIDO */
+        .main-container { max-width: 800px; margin: 0 auto; padding: 0 15px; }
+        .view { display: none; animation: fadeEffect 0.4s; }
+        .view.active { display: block; }
+        @keyframes fadeEffect { from {opacity: 0;} to {opacity: 1;} }
 
         /* TARJETAS */
-        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 20px; }
-        
+        .card { background: var(--white); border-radius: 10px; padding: 25px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        .card-header { margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        .card-title { margin: 0; color: var(--dark); font-size: 1.2rem; }
+
         /* FORMULARIOS */
-        .form-group { margin-bottom: 15px; }
-        label { display: block; margin-bottom: 5px; font-weight: 600; color: #333; }
-        select, input, textarea { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; font-size: 14px; }
-        textarea { height: 150px; font-family: monospace; }
+        .form-group { margin-bottom: 1.2rem; }
+        label { display: block; margin-bottom: 8px; font-weight: 600; color: var(--dark); font-size: 0.95rem; }
+        select, input[type="number"], input[type="text"] {
+            width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 6px;
+            font-size: 1rem; transition: border-color 0.3s; box-sizing: border-box;
+        }
+        select:focus, input:focus { border-color: var(--primary); outline: none; }
+        
+        textarea { 
+            width: 100%; height: 120px; padding: 10px; border: 1px solid #ddd; 
+            border-radius: 6px; font-family: 'Consolas', monospace; font-size: 0.9rem; resize: vertical; box-sizing: border-box;
+        }
 
         /* BOTONES */
-        button { width: 100%; padding: 12px; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; font-weight: bold; transition: 0.2s; }
-        .btn-green { background-color: #28a745; color: white; }
-        .btn-green:hover { background-color: #218838; }
-        .btn-blue { background-color: #007bff; color: white; }
-        .btn-blue:hover { background-color: #0056b3; }
+        .btn { width: 100%; padding: 14px; border: none; border-radius: 6px; font-size: 1rem; font-weight: 700; cursor: pointer; transition: transform 0.1s, box-shadow 0.3s; text-transform: uppercase; letter-spacing: 0.5px; }
+        .btn:active { transform: scale(0.98); }
+        .btn-success { background-color: var(--success); color: white; box-shadow: 0 4px 10px rgba(39, 174, 96, 0.2); }
+        .btn-primary { background-color: var(--primary); color: white; box-shadow: 0 4px 10px rgba(74, 144, 226, 0.2); }
+        .btn-danger { background-color: var(--danger); color: white; width: auto; padding: 8px 15px; font-size: 0.9rem; }
+
+        /* TABLAS */
+        .table-responsive { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; min-width: 500px; }
+        th { text-align: left; padding: 12px; background-color: #f8f9fa; color: #555; font-weight: 600; border-bottom: 2px solid #eee; }
+        td { padding: 12px; border-bottom: 1px solid #eee; color: #444; }
+        tr:hover { background-color: #fafafa; }
+
+        /* AYUDAS */
+        .badge { padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: bold; }
+        .bg-in { background-color: #d4edda; color: #155724; }
+        .bg-out { background-color: #f8d7da; color: #721c24; }
+        .bg-neu { background-color: #e2e3e5; color: #383d41; }
         
-        /* TABLA */
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th, td { text-align: left; padding: 10px; border-bottom: 1px solid #eee; }
-        th { background-color: #f8f9fa; color: #555; }
-        
-        .stock-positivo { color: #28a745; font-weight: bold; }
-        .stock-negativo { color: #dc3545; font-weight: bold; }
+        .hint { font-size: 0.85rem; color: #7f8c8d; margin-top: 5px; }
     </style>
 </head>
 <body>
 
-    <header>
-        <h1>🏭 CONTROL DE PRODUCCIÓN WEB</h1>
-    </header>
+<header>
+    <h1>🏭 GESTIÓN DE PRODUCCIÓN</h1>
+</header>
 
-    <div class="tabs">
-        <div class="tab active" onclick="cambiarPestana('cargar')">📝 CARGAR</div>
-        <div class="tab" onclick="cambiarPestana('historial')">📋 HISTORIAL</div>
-        <div class="tab" onclick="cambiarPestana('config')">⚙️ CONFIGURACIÓN</div>
-    </div>
+<nav class="nav-container">
+    <ul class="tabs">
+        <li class="tab active" onclick="cambiarPestana('cargar')">📝 CARGAR</li>
+        <li class="tab" onclick="cambiarPestana('historial')">📋 HISTORIAL</li>
+        <li class="tab" onclick="cambiarPestana('config')">⚙️ CONFIGURACIÓN</li>
+    </ul>
+</nav>
 
-    <div id="vista-cargar" class="container active">
+<div class="main-container">
+
+    <div id="vista-cargar" class="view active">
         <div class="card">
-            <h3>Nuevo Movimiento</h3>
+            <div class="card-header">
+                <h2 class="card-title">Registrar Movimiento</h2>
+            </div>
+            
             <div class="form-group">
-                <label>Categoría</label>
-                <select id="sel-categoria" onchange="cargarListaProductos()">
-                    <option value="panaderia">Panadería</option>
-                    <option value="pasteleria">Pastelería</option>
-                    <option value="cocina">Cocina</option>
+                <label>📍 Categoría</label>
+                <select id="sel-categoria" onchange="cargarProductosSelect()">
+                    <option value="panaderia">🥖 Panadería</option>
+                    <option value="pasteleria">🍰 Pastelería</option>
+                    <option value="cocina">🥘 Cocina</option>
                 </select>
             </div>
+
             <div class="form-group">
-                <label>Producto</label>
+                <label>📦 Producto</label>
                 <select id="sel-producto">
-                    <option>Cargando...</option>
+                    <option>Cargando lista...</option>
                 </select>
             </div>
+
             <div class="form-group">
-                <label>Acción</label>
+                <label>⚡ Acción</label>
                 <select id="sel-accion">
-                    <option value="ENTRADA">➕ PRODUCCIÓN (Entrada)</option>
-                    <option value="SALIDA">➖ DESCARTE (Salida)</option>
-                    <option value="REUTILIZACION">🔄 REUTILIZACIÓN</option>
+                    <option value="ENTRADA">🟢 PRODUCCIÓN (Entrada)</option>
+                    <option value="SALIDA">🔴 DESCARTE / MERMA (Salida)</option>
+                    <option value="REUTILIZACION">🔄 REUTILIZACIÓN (Neutro)</option>
                 </select>
             </div>
+
             <div class="form-group">
-                <label>Cantidad</label>
-                <input type="number" id="inp-cantidad" placeholder="0">
+                <label>⚖️ Cantidad</label>
+                <input type="number" id="inp-cantidad" placeholder="Ingrese cantidad..." step="0.01">
             </div>
+
             <div class="form-group">
-                <label>Operario</label>
-                <select id="sel-operario"><option>-</option></select>
+                <label>👷 Operario (Opcional)</label>
+                <select id="sel-operario">
+                    <option value="-">-- Seleccionar --</option>
+                </select>
             </div>
-            <button class="btn-green" onclick="guardarMovimiento()">GUARDAR</button>
+
+            <button class="btn btn-success" onclick="guardarMovimiento()">GUARDAR REGISTRO</button>
         </div>
     </div>
 
-    <div id="vista-historial" class="container">
+    <div id="vista-historial" class="view">
         <div class="card">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <h3>Últimos Movimientos</h3>
-                <button onclick="cargarHistorial()" style="width:auto; padding:5px 15px; font-size:12px;">🔄</button>
+            <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+                <h2 class="card-title">Últimos Movimientos</h2>
+                <button class="btn btn-primary" style="width:auto; padding:8px 15px;" onclick="cargarHistorial()">🔄 Actualizar</button>
             </div>
-            <div style="overflow-x:auto;">
+            <div class="table-responsive">
                 <table id="tabla-historial">
                     <thead>
-                        <tr><th>Fecha</th><th>Producto</th><th>Tipo</th><th>Cant</th><th>Operario</th></tr>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Producto</th>
+                            <th>Tipo</th>
+                            <th>Cant.</th>
+                            <th>Operario</th>
+                        </tr>
                     </thead>
-                    <tbody></tbody>
+                    <tbody>
+                        <tr><td colspan="5" style="text-align:center; padding:20px;">Cargando...</td></tr>
+                    </tbody>
                 </table>
             </div>
         </div>
     </div>
 
-    <div id="vista-config" class="container">
-        <div class="card" style="border-top: 4px solid #ffc107;">
-            <h3>Administrar Productos (CSV)</h3>
-            <p style="font-size:12px; color:#666;">Formato: <b>ID,Nombre,Unidad,Alterno,Factor,StockInicial</b></p>
-            
-            <div class="form-group">
-                <label>Panadería</label>
-                <textarea id="csv-panaderia"></textarea>
+    <div id="vista-config" class="view">
+        <div class="card" style="border-top: 4px solid #f1c40f;">
+            <div class="card-header">
+                <h2 class="card-title">⚙️ Gestión de Productos (CSV)</h2>
             </div>
+            <p class="hint" style="background:#fff3cd; color:#856404; padding:10px; border-radius:5px;">
+                <b>Formato Obligatorio:</b> ID, Nombre, Unidad, Alternativo, Factor, StockInicial<br>
+                <i>Ejemplo: P01, Media Luna, Unidad, Docena, 12, 100</i>
+            </p>
+
             <div class="form-group">
-                <label>Pastelería</label>
-                <textarea id="csv-pasteleria"></textarea>
+                <label>🥖 Panadería</label>
+                <textarea id="csv-panaderia" placeholder="Pegar CSV aquí..."></textarea>
             </div>
+
             <div class="form-group">
-                <label>Cocina</label>
-                <textarea id="csv-cocina"></textarea>
+                <label>🍰 Pastelería</label>
+                <textarea id="csv-pasteleria" placeholder="Pegar CSV aquí..."></textarea>
             </div>
+
             <div class="form-group">
-                <label>Operarios (separados por coma)</label>
-                <input type="text" id="csv-operarios">
+                <label>🥘 Cocina</label>
+                <textarea id="csv-cocina" placeholder="Pegar CSV aquí..."></textarea>
             </div>
-            
-            <button class="btn-blue" onclick="guardarConfiguracion()">💾 GUARDAR CAMBIOS</button>
+
+            <div class="form-group">
+                <label>👷 Lista de Operarios (Separados por coma)</label>
+                <input type="text" id="csv-operarios" placeholder="Juan, Maria, Pedro...">
+            </div>
+
+            <button class="btn btn-primary" onclick="guardarConfiguracion()">💾 GUARDAR CAMBIOS Y SINCRONIZAR</button>
         </div>
     </div>
 
-    <script>
-        // =======================================================
-        // ⚠️ PEGA AQUÍ TUS CREDENCIALES DE FIREBASE
-        // =======================================================
-        const firebaseConfig = {
-            apiKey: "2550LP",
-            authDomain: "TU_DOMINIO.firebaseapp.com",
-            projectId: "TU_PROJECT_ID",
-            storageBucket: "TU_BUCKET",
-            messagingSenderId: "TU_SENDER_ID",
-            appId: "TU_APP_ID"
-        };
+</div>
 
-        // Inicializar Firebase
-        if (!firebase.apps.length) {
-            try { firebase.initializeApp(firebaseConfig); } 
-            catch (e) { console.error("Error Firebase:", e); }
+<script>
+    // =================================================================
+    // ⚠️ ATENCIÓN: PEGA AQUÍ TUS CREDENCIALES DE FIREBASE
+    // =================================================================
+    const firebaseConfig = {
+        apiKey: "2550LP",
+        authDomain: "PONER_TU_DOMAIN",
+        projectId: "PONER_TU_PROJECT_ID",
+        storageBucket: "PONER_TU_BUCKET",
+        messagingSenderId: "PONER_TU_SENDER_ID",
+        appId: "PONER_TU_APP_ID"
+    };
+
+    // Inicializar Firebase
+    if (!firebase.apps.length) {
+        try {
+            firebase.initializeApp(firebaseConfig);
+        } catch (e) {
+            console.error("Error init Firebase:", e);
+            alert("Error: Revisa las claves de Firebase en el código HTML.");
         }
-        const db = firebase.firestore();
+    }
+    const db = firebase.firestore();
 
-        // VARIABLES GLOBALES
-        const CATEGORIAS = ['panaderia', 'pasteleria', 'cocina'];
+    // =================================================================
+    // LÓGICA DEL PROGRAMA (VERSIÓN ESTABLE RECUPERADA)
+    // =================================================================
+    const CATEGORIAS = ['panaderia', 'pasteleria', 'cocina'];
 
-        // --- NAVEGACIÓN ---
-        function cambiarPestana(id) {
-            document.querySelectorAll('.container').forEach(d => d.classList.remove('active'));
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.getElementById('vista-' + id).classList.add('active');
+    // 1. NAVEGACIÓN
+    function cambiarPestana(id) {
+        document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        
+        document.getElementById('vista-' + id).classList.add('active');
+        // Activar tab visualmente
+        const index = id === 'cargar' ? 0 : (id === 'historial' ? 1 : 2);
+        document.querySelectorAll('.tab')[index].classList.add('active');
+    }
+
+    // 2. CARGAR LISTAS (Inicio)
+    async function cargarInicial() {
+        await cargarConfiguracionUI();
+        await cargarProductosSelect();
+    }
+
+    // 3. CARGAR PRODUCTOS EN EL SELECT (Pestaña Cargar)
+    async function cargarProductosSelect() {
+        const cat = document.getElementById('sel-categoria').value;
+        const select = document.getElementById('sel-producto');
+        select.innerHTML = '<option>Cargando...</option>';
+
+        try {
+            const doc = await db.collection('configuracion').doc('productos_' + cat).get();
+            select.innerHTML = '';
             
-            // Activar estilo pestaña
-            const index = id === 'cargar' ? 0 : (id === 'historial' ? 1 : 2);
-            document.querySelectorAll('.tab')[index].classList.add('active');
-        }
-
-        // --- CARGAR DATOS INICIALES ---
-        async function cargarTodo() {
-            cargarListaProductos();
-            cargarConfiguracionUI();
-        }
-
-        // --- 1. LÓGICA DE CARGA DE PRODUCTOS EN SELECT ---
-        async function cargarListaProductos() {
-            const cat = document.getElementById('sel-categoria').value;
-            const select = document.getElementById('sel-producto');
-            select.innerHTML = '<option>Cargando...</option>';
-
-            try {
-                const doc = await db.collection('configuracion').doc('productos_' + cat).get();
-                if (doc.exists && doc.data().json_data) {
-                    select.innerHTML = '';
-                    const lista = doc.data().json_data;
-                    lista.sort((a,b) => a.nombre.localeCompare(b.nombre));
-                    
-                    lista.forEach(p => {
-                        const opt = document.createElement('option');
-                        opt.value = p.id;
-                        opt.text = p.nombre;
-                        select.appendChild(opt);
-                    });
-                } else {
-                    select.innerHTML = '<option>Sin productos</option>';
-                }
-            } catch (e) { console.error(e); }
-        }
-
-        // --- 2. GUARDAR MOVIMIENTO ---
-        async function guardarMovimiento() {
-            const cat = document.getElementById('sel-categoria').value;
-            const pid = document.getElementById('sel-producto').value;
-            const pnom = document.getElementById('sel-producto').options[document.getElementById('sel-producto').selectedIndex].text;
-            const acc = document.getElementById('sel-accion').value;
-            const cant = parseFloat(document.getElementById('inp-cantidad').value);
-            const op = document.getElementById('sel-operario').value;
-
-            if (!pid || cant <= 0) return alert("Revise los datos");
-
-            try {
-                await db.collection('movimientos').add({
-                    fecha: new Date().toISOString(),
-                    productoId: pid,
-                    productoNombre: pnom,
-                    categoria: cat,
-                    tipo: acc,
-                    cantidadBase: cant,
-                    operario: op,
-                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+            if (doc.exists && doc.data().json_data) {
+                const lista = doc.data().json_data;
+                lista.sort((a,b) => a.nombre.localeCompare(b.nombre));
+                
+                lista.forEach(p => {
+                    const opt = document.createElement('option');
+                    opt.value = p.id;
+                    opt.text = p.nombre;
+                    select.appendChild(opt);
                 });
-                alert("Guardado OK");
-                document.getElementById('inp-cantidad').value = '';
-            } catch (e) { alert("Error: " + e.message); }
+            } else {
+                select.innerHTML = '<option>Sin productos (Ir a Config)</option>';
+            }
+        } catch (e) { console.error(e); select.innerHTML = '<option>Error</option>'; }
+    }
+
+    // 4. GUARDAR MOVIMIENTO (Lógica Central)
+    async function guardarMovimiento() {
+        const cat = document.getElementById('sel-categoria').value;
+        const pid = document.getElementById('sel-producto').value;
+        const accion = document.getElementById('sel-accion').value;
+        const cant = parseFloat(document.getElementById('inp-cantidad').value);
+        const op = document.getElementById('sel-operario').value;
+        
+        // Obtener nombre del producto seleccionado
+        const sel = document.getElementById('sel-producto');
+        const pnom = sel.options[sel.selectedIndex].text;
+
+        if (!pid || isNaN(cant) || cant <= 0) {
+            return alert("Por favor complete todos los campos correctamente.");
         }
 
-        // --- 3. HISTORIAL ---
-        async function cargarHistorial() {
-            const tbody = document.querySelector('#tabla-historial tbody');
-            tbody.innerHTML = '<tr><td>Cargando...</td></tr>';
-            
-            const snap = await db.collection('movimientos').orderBy('timestamp', 'desc').limit(15).get();
+        try {
+            await db.collection('movimientos').add({
+                fecha: new Date().toISOString(),
+                productoId: pid,
+                productoNombre: pnom,
+                categoria: cat,
+                tipo: accion,
+                cantidadBase: cant,
+                operario: op,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            alert("✅ Movimiento guardado correctamente.");
+            document.getElementById('inp-cantidad').value = '';
+        } catch (e) {
+            alert("Error al guardar: " + e.message);
+        }
+    }
+
+    // 5. HISTORIAL
+    async function cargarHistorial() {
+        const tbody = document.querySelector('#tabla-historial tbody');
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center">Cargando...</td></tr>';
+        
+        try {
+            const snap = await db.collection('movimientos').orderBy('timestamp', 'desc').limit(20).get();
             tbody.innerHTML = '';
             
             snap.forEach(doc => {
                 const d = doc.data();
-                const fecha = d.timestamp ? d.timestamp.toDate().toLocaleDateString() : '-';
-                const color = d.tipo === 'ENTRADA' ? 'green' : (d.tipo === 'SALIDA' ? 'red' : 'blue');
+                const fecha = d.timestamp ? d.timestamp.toDate().toLocaleDateString() + ' ' + d.timestamp.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '-';
                 
+                let badgeClass = 'bg-neu';
+                if(d.tipo === 'ENTRADA') badgeClass = 'bg-in';
+                if(d.tipo === 'SALIDA') badgeClass = 'bg-out';
+
                 tbody.innerHTML += `
                     <tr>
                         <td>${fecha}</td>
-                        <td>${d.productoNombre}</td>
-                        <td style="color:${color}">${d.tipo}</td>
-                        <td>${d.cantidadBase}</td>
+                        <td><b>${d.productoNombre}</b></td>
+                        <td><span class="badge ${badgeClass}">${d.tipo}</span></td>
+                        <td style="font-weight:bold">${d.cantidadBase}</td>
                         <td>${d.operario || '-'}</td>
                     </tr>
                 `;
             });
-        }
+        } catch (e) { tbody.innerHTML = '<tr><td colspan="5">Error cargando</td></tr>'; }
+    }
 
-        // --- 4. CONFIGURACIÓN (LO QUE ARREGLA EL PYTHON) ---
-        async function cargarConfiguracionUI() {
+    // 6. CONFIGURACIÓN (Vital para Python)
+    async function cargarConfiguracionUI() {
+        // Cargar CSVs
+        for (const c of CATEGORIAS) {
+            const doc = await db.collection('configuracion').doc('productos_' + c).get();
+            if (doc.exists) document.getElementById('csv-' + c).value = doc.data().csv || '';
+        }
+        // Cargar Operarios
+        const ops = await db.collection('configuracion').doc('operarios_lista').get();
+        if (ops.exists) {
+            const lista = ops.data().lista || '';
+            document.getElementById('csv-operarios').value = lista;
+            actualizarSelectOperarios(lista);
+        }
+    }
+
+    async function guardarConfiguracion() {
+        const btn = document.querySelector('#vista-config button');
+        const txtOrig = btn.innerText;
+        btn.innerText = "GUARDANDO..."; btn.disabled = true;
+
+        try {
+            // Guardar Productos
             for (const c of CATEGORIAS) {
-                const doc = await db.collection('configuracion').doc('productos_' + c).get();
-                if (doc.exists) document.getElementById('csv-' + c).value = doc.data().csv || '';
-            }
-            
-            const ops = await db.collection('configuracion').doc('operarios_lista').get();
-            if (ops.exists) {
-                document.getElementById('csv-operarios').value = ops.data().lista || '';
-                actualizarSelectOperarios(ops.data().lista);
-            }
-        }
-
-        async function guardarConfiguracion() {
-            const btn = document.querySelector('#vista-config button');
-            btn.innerText = "GUARDANDO..."; btn.disabled = true;
-
-            try {
-                // GUARDAR PRODUCTOS
-                for (const c of CATEGORIAS) {
-                    const csv = document.getElementById('csv-' + c).value;
-                    const json = procesarCSV(csv, c);
-                    
-                    // ESTA LÍNEA ES LA MAGIA: Guarda 'json_data' limpio para Python
-                    await db.collection('configuracion').doc('productos_' + c).set({
-                        csv: csv,
-                        json_data: json,
-                        ultima_actualizacion: new Date().toISOString()
-                    });
-                }
-
-                // GUARDAR OPERARIOS
-                const ops = document.getElementById('csv-operarios').value;
-                await db.collection('configuracion').doc('operarios_lista').set({ lista: ops });
-
-                alert("✅ DATOS GUARDADOS CORRECTAMENTE.\nAhora Python debería funcionar.");
-                location.reload();
-
-            } catch (e) {
-                alert("Error: " + e.message);
-            } finally {
-                btn.innerText = "💾 GUARDAR CAMBIOS"; btn.disabled = false;
-            }
-        }
-
-        function procesarCSV(csv, cat) {
-            const res = [];
-            csv.split('\n').forEach(line => {
-                const p = line.split(',');
-                if (p.length >= 2) {
-                    const id = p[0].trim();
-                    if(id) {
-                        res.push({
-                            id: id,
-                            nombre: p[1].trim(),
-                            unidad: p[2]?.trim() || 'Unidad',
-                            alterno: p[3]?.trim() || '-',
-                            factor: p[4]?.trim() || '1',
-                            stockInicial: p[5]?.trim() || '0',
-                            categoria: cat
-                        });
-                    }
-                }
-            });
-            return res;
-        }
-
-        function actualizarSelectOperarios(listaStr) {
-            const sel = document.getElementById('sel-operario');
-            sel.innerHTML = '<option value="-">-</option>';
-            if(listaStr) {
-                listaStr.split(',').forEach(o => {
-                    const opt = document.createElement('option');
-                    opt.value = o.trim(); opt.text = o.trim();
-                    sel.appendChild(opt);
+                const csv = document.getElementById('csv-' + c).value;
+                const json = procesarCSV(csv, c);
+                
+                // GUARDADO LIMPIO (Lo que arregla el conflicto con Python)
+                await db.collection('configuracion').doc('productos_' + c).set({
+                    csv: csv,
+                    json_data: json,
+                    ultima_actualizacion: new Date().toISOString()
                 });
             }
+
+            // Guardar Operarios
+            const listaOps = document.getElementById('csv-operarios').value;
+            await db.collection('configuracion').doc('operarios_lista').set({ lista: listaOps });
+
+            alert("✅ Configuración guardada y sincronizada con el Punto de Venta.");
+            cargarProductosSelect();
+            actualizarSelectOperarios(listaOps);
+
+        } catch (e) {
+            alert("Error: " + e.message);
+        } finally {
+            btn.innerText = txtOrig; btn.disabled = false;
         }
+    }
 
-        // INICIO
-        cargarTodo();
+    // Convertir CSV a Objeto (Bridge para Python)
+    function procesarCSV(csv, cat) {
+        const res = [];
+        csv.split('\n').forEach(line => {
+            const p = line.split(',');
+            if (p.length >= 2) {
+                const id = p[0].trim();
+                if(id) {
+                    res.push({
+                        id: id,
+                        nombre: p[1].trim(),
+                        unidad: p[2]?.trim() || 'Unidad',
+                        alterno: p[3]?.trim() || '-',
+                        factor: p[4]?.trim() || '1',
+                        stockInicial: p[5]?.trim() || '0',
+                        categoria: cat
+                    });
+                }
+            }
+        });
+        return res;
+    }
 
-    </script>
+    function actualizarSelectOperarios(str) {
+        const sel = document.getElementById('sel-operario');
+        sel.innerHTML = '<option value="-">-- Seleccionar --</option>';
+        if(str) {
+            str.split(',').forEach(o => {
+                const opt = document.createElement('option');
+                opt.value = o.trim(); opt.text = o.trim();
+                sel.appendChild(opt);
+            });
+        }
+    }
+
+    // ARRANCAR
+    cargarInicial();
+
+</script>
 </body>
 </html>
