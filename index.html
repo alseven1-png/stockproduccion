@@ -3,217 +3,423 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Control de Producción - GASTRO</title>
+    <title>Control de Stock - Producción</title>
+    
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+
     <style>
-        body { font-family: 'Segoe UI', sans-serif; margin: 0; background-color: #f4f6f9; color: #333; }
-        header { background-color: #343a40; color: white; padding: 15px; text-align: center; }
-        h1 { margin: 0; font-size: 1.5rem; }
-        .tabs { display: flex; background: #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        .tab { flex: 1; padding: 15px; text-align: center; cursor: pointer; border-bottom: 3px solid transparent; font-weight: bold; }
-        .tab.active { border-bottom: 3px solid #007bff; color: #007bff; }
-        .content { display: none; padding: 20px; }
-        .content.active { display: block; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #e9ecef; margin: 0; padding: 0; }
         
-        /* Formularios */
-        .form-group { margin-bottom: 15px; }
-        label { display: block; margin-bottom: 5px; font-weight: bold; }
-        select, input, textarea { width: 100%; padding: 10px; border: 1px solid #ced4da; border-radius: 4px; box-sizing: border-box; }
-        textarea { height: 150px; font-family: monospace; }
+        /* HEADER */
+        .header { background-color: #343a40; color: white; padding: 20px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .header h1 { margin: 0; font-size: 24px; letter-spacing: 1px; }
+
+        /* NAVEGACIÓN (Pestañas) */
+        .nav-tabs { display: flex; justify-content: center; background-color: #fff; padding: 0; list-style: none; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .nav-item { padding: 15px 30px; cursor: pointer; font-weight: bold; color: #6c757d; border-bottom: 3px solid transparent; transition: all 0.3s; }
+        .nav-item:hover { color: #007bff; background-color: #f8f9fa; }
+        .nav-item.active { color: #007bff; border-bottom: 3px solid #007bff; }
+
+        /* CONTENIDO PRINCIPAL */
+        .container { max-width: 800px; margin: 30px auto; padding: 20px; }
+        .vista { display: none; animation: fadeIn 0.5s; }
+        .vista.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        /* TARJETAS */
+        .card { background: white; border-radius: 8px; padding: 25px; box-shadow: 0 4px 10px rgba(0,0,0,0.08); margin-bottom: 20px; }
+        .card h2 { margin-top: 0; color: #343a40; border-bottom: 2px solid #f1f1f1; padding-bottom: 10px; margin-bottom: 20px; font-size: 18px; }
+
+        /* FORMULARIOS */
+        .form-group { margin-bottom: 20px; }
+        label { display: block; font-weight: 600; margin-bottom: 8px; color: #495057; }
+        select, input, textarea { width: 100%; padding: 12px; border: 1px solid #ced4da; border-radius: 6px; font-size: 16px; box-sizing: border-box; transition: border 0.3s; }
+        select:focus, input:focus, textarea:focus { border-color: #80bdff; outline: none; box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25); }
+        textarea { height: 120px; font-family: monospace; font-size: 14px; }
+
+        /* BOTONES */
+        .btn { width: 100%; padding: 14px; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; transition: background 0.3s; text-transform: uppercase; }
+        .btn-primary { background-color: #007bff; color: white; }
+        .btn-primary:hover { background-color: #0056b3; }
+        .btn-success { background-color: #28a745; color: white; }
+        .btn-success:hover { background-color: #218838; }
+        .btn-danger { background-color: #dc3545; color: white; margin-top: 10px; }
         
-        button { width: 100%; padding: 12px; background-color: #28a745; color: white; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; }
-        button:hover { background-color: #218838; }
-        button.delete { background-color: #dc3545; margin-top: 10px; }
-        
-        /* Tablas */
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; background: white; }
-        th, td { padding: 10px; border: 1px solid #dee2e6; text-align: left; }
-        th { background-color: #e9ecef; }
-        
-        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        /* TABLAS */
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #dee2e6; }
+        th { background-color: #e9ecef; color: #495057; font-weight: bold; }
+        tr:hover { background-color: #f8f9fa; }
+
+        /* MENSAJES */
+        .alerta { padding: 15px; border-radius: 6px; margin-bottom: 20px; display: none; }
+        .alerta-success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .alerta-error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
     </style>
 </head>
 <body>
 
-<header>
-    <h1>🥐 CONTROL GASTRO WEB</h1>
-</header>
-
-<div class="tabs">
-    <div class="tab active" onclick="cambiarTab('vista-cargar')">📝 CARGAR</div>
-    <div class="tab" onclick="cambiarTab('vista-historial')">📋 HISTORIAL</div>
-    <div class="tab" onclick="cambiarTab('vista-config')">⚙️ CONFIG</div>
-</div>
-
-<div id="vista-cargar" class="content active">
-    <div class="card">
-        <div class="form-group">
-            <label>Categoría</label>
-            <select id="sel-categoria" onchange="cargarProductosSelect()"></select>
-        </div>
-        <div class="form-group">
-            <label>Producto</label>
-            <select id="sel-producto"></select>
-        </div>
-        <div class="form-group">
-            <label>Acción</label>
-            <select id="sel-accion">
-                <option value="ENTRADA">🟢 PRODUCCIÓN (Entrada)</option>
-                <option value="SALIDA">🔴 DESCARTE / MERMA (Salida)</option>
-                <option value="REUTILIZACION">🔄 REUTILIZACIÓN (Neutro)</option>
-            </select>
-        </div>
-        <div class="form-group">
-            <label>Cantidad</label>
-            <input type="number" id="inp-cantidad" placeholder="0" step="0.1">
-        </div>
-        <div class="form-group">
-            <label>Operario (Opcional)</label>
-            <select id="sel-operario"><option value="-">-- Seleccionar --</option></select>
-        </div>
-        <button onclick="guardarMovimiento()">GUARDAR MOVIMIENTO</button>
+    <div class="header">
+        <h1>🥐 CONTROL DE STOCK Y PRODUCCIÓN</h1>
     </div>
-</div>
 
-<div id="vista-historial" class="content">
-    <div class="card">
-        <h3>Últimos Movimientos</h3>
-        <button onclick="cargarHistorial()" style="background-color: #007bff; margin-bottom: 10px;">🔄 ACTUALIZAR LISTA</button>
-        <div style="overflow-x: auto;">
-            <table id="tabla-historial">
-                <thead><tr><th>Fecha</th><th>Producto</th><th>Tipo</th><th>Cant</th><th>Operario</th></tr></thead>
-                <tbody></tbody>
-            </table>
+    <ul class="nav-tabs">
+        <li class="nav-item active" onclick="mostrarVista('cargar')">📝 CARGAR</li>
+        <li class="nav-item" onclick="mostrarVista('historial')">📋 HISTORIAL</li>
+        <li class="nav-item" onclick="mostrarVista('config')">⚙️ CONFIGURACIÓN</li>
+    </ul>
+
+    <div class="container">
+        <div id="mensaje-exito" class="alerta alerta-success">Operación realizada con éxito.</div>
+        <div id="mensaje-error" class="alerta alerta-error">Ocurrió un error.</div>
+
+        <div id="vista-cargar" class="vista active">
+            <div class="card">
+                <h2>NUEVO MOVIMIENTO</h2>
+                <div class="form-group">
+                    <label>Categoría</label>
+                    <select id="sel-categoria" onchange="cargarProductos()">
+                        <option value="panaderia">🥖 Panadería</option>
+                        <option value="pasteleria">🍰 Pastelería</option>
+                        <option value="cocina">🍳 Cocina</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Producto</label>
+                    <select id="sel-producto">
+                        <option>Cargando...</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Acción</label>
+                    <select id="sel-accion">
+                        <option value="ENTRADA">🟢 PRODUCCIÓN (Entrada)</option>
+                        <option value="SALIDA">🔴 DESCARTE / MERMA (Salida)</option>
+                        <option value="REUTILIZACION">🔄 REUTILIZACIÓN (Neutro)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Cantidad</label>
+                    <input type="number" id="inp-cantidad" placeholder="Ej: 10" step="0.1">
+                </div>
+                <div class="form-group">
+                    <label>Operario</label>
+                    <select id="sel-operario">
+                        <option value="-">-- Seleccionar --</option>
+                    </select>
+                </div>
+                <button class="btn btn-success" onclick="guardarMovimiento()">GUARDAR MOVIMIENTO</button>
+            </div>
+        </div>
+
+        <div id="vista-historial" class="vista">
+            <div class="card">
+                <h2>ÚLTIMOS MOVIMIENTOS</h2>
+                <button class="btn btn-primary" onclick="cargarHistorial()" style="margin-bottom: 15px;">🔄 ACTUALIZAR LISTA</button>
+                <div style="overflow-x: auto;">
+                    <table id="tabla-historial">
+                        <thead>
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Producto</th>
+                                <th>Acción</th>
+                                <th>Cant.</th>
+                                <th>Operario</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td colspan="5" style="text-align:center">Cargando...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="vista-config" class="vista">
+            <div class="card" style="border-left: 5px solid #ffc107;">
+                <h2>⚙️ GESTIÓN DE PRODUCTOS (CSV)</h2>
+                <p style="font-size: 13px; color: #666; margin-bottom: 15px;">
+                    Formato: <b>ID, Nombre, Unidad, Alternativo, Factor, StockInicial</b><br>
+                    <i>Ej: P01, Media Luna, Unidad, Docena, 12, 100</i>
+                </p>
+
+                <div class="form-group">
+                    <label>🥖 PRODUCTOS PANADERÍA</label>
+                    <textarea id="config-panaderia"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>🍰 PRODUCTOS PASTELERÍA</label>
+                    <textarea id="config-pasteleria"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>🍳 PRODUCTOS COCINA</label>
+                    <textarea id="config-cocina"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>👷 LISTA DE OPERARIOS (Separados por coma)</label>
+                    <input type="text" id="config-operarios" placeholder="Juan, Maria, Pedro">
+                </div>
+
+                <button class="btn btn-primary" onclick="guardarConfiguracion()">💾 GUARDAR CAMBIOS Y SINCRONIZAR</button>
+                <br><br>
+                <p style="font-size: 12px; color: #888; text-align: center;">
+                    * Al guardar, se sincroniza automáticamente con el sistema Python.
+                </p>
+            </div>
         </div>
     </div>
-</div>
 
-<div id="vista-config" class="content">
-    <div class="card" style="border-left: 5px solid #ffc107;">
-        <h3>⚠️ ADMINISTRACIÓN DE PRODUCTOS</h3>
-        <p>Edite los productos usando formato CSV: <b>ID, Nombre, Unidad, Alternativo, Factor, StockInicial</b></p>
-        
-        <label>PANADERÍA</label>
-        <textarea id="config-panaderia"></textarea>
-        
-        <label>PASTELERÍA</label>
-        <textarea id="config-pasteleria"></textarea>
-        
-        <label>COCINA</label>
-        <textarea id="config-cocina"></textarea>
-        
-        <label>LISTA OPERARIOS (Separados por coma)</label>
-        <input type="text" id="config-operarios">
-        
-        <button onclick="guardarConfiguracion()" style="margin-top: 20px;">💾 GUARDAR CAMBIOS Y SINCRONIZAR</button>
-    </div>
-</div>
+    <script>
+        // =================================================================
+        // ⚠️ PEGA AQUÍ TUS CREDENCIALES DE FIREBASE (ServiceAccountKey NO, el config web)
+        // =================================================================
+        const firebaseConfig = {
+            apiKey: "2550LP",
+            authDomain: "TU_PROYECTO.firebaseapp.com",
+            projectId: "TU_PROYECTO",
+            storageBucket: "TU_PROYECTO.appspot.com",
+            messagingSenderId: "NUMERO",
+            appId: "ID"
+        };
 
-<script>
-    // --- 1. CONFIGURACIÓN FIREBASE (PEGA TU CONFIG AQUÍ SI ES DISTINTA) ---
-    // El usuario debe poner sus propias credenciales si cambian, pero usamos la estructura estándar.
-    // REEMPLAZA ESTO CON TUS CLAVES SI NO FUNCIONA
-    const firebaseConfig = {
-        // ... TUS CREDENCIALES DE FIREBASE ...
-        // Como no las tengo, asumo que ya sabes donde van o usas el archivo previo.
-        // Si no tienes el config a mano, busca en tu archivo anterior la variable firebaseConfig
-        apiKey: "TU_API_KEY",
-        authDomain: "TU_PROJECT.firebaseapp.com",
-        projectId: "TU_PROJECT_ID",
-        storageBucket: "TU_PROJECT.appspot.com",
-        messagingSenderId: "NUMERO",
-        appId: "ID_APP"
-    };
-    
-    // Inicializar Firebase (Evita error si ya existe)
-    if (!firebase.apps.length) {
-        // NOTA: Si no tienes las claves aquí, el HTML no conectará. 
-        // Asegúrate de copiar las claves de tu archivo viejo si este no anda.
-        // Para este ejemplo asumo que las tienes o las pegas aquí.
-        // firebase.initializeApp(firebaseConfig); 
-        console.log("⚠️ RECUERDA PEGAR TUS CLAVES DE FIREBASE AQUÍ ARRIBA");
-    } else {
-        firebase.app(); 
-    }
-    
-    // REFERENCIAS
-    // const db = firebase.firestore(); // Descomentar cuando pongas las claves
-
-    // =================================================================
-    // LÓGICA PRINCIPAL RESTAURADA
-    // =================================================================
-    
-    const ORDEN_CATEGORIAS = ['panaderia', 'pasteleria', 'cocina'];
-    const COLL_CONFIG = 'configuracion';
-    
-    function cambiarTab(id) {
-        document.querySelectorAll('.content').forEach(d => d.classList.remove('active'));
-        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-        document.getElementById(id).classList.add('active');
-        // Activar visualmente el tab...
-    }
-
-    // --- GUARDADO DE CONFIGURACIÓN (LA CLAVE PARA ARREGLAR PYTHON) ---
-    window.guardarConfiguracion = async function() {
-        // Simulación de guardado si no hay DB conectada en este ejemplo de texto
-        if (typeof db === 'undefined') { alert("Falta configurar Firebase en el código HTML."); return; }
-
-        const btn = document.querySelector('#vista-config button');
-        btn.innerText = "GUARDANDO..."; btn.disabled = true;
-
-        try {
-            for (const key of ORDEN_CATEGORIAS) {
-                const val = document.getElementById(`config-${key}`).value;
-                const listaLimpia = procesarProductosCSV(val, key); 
-
-                // GUARDADO LIMPIO QUE PYTHON ENTIENDE
-                await db.collection(COLL_CONFIG).doc(`productos_${key}`).set({ 
-                    csv: val,
-                    json_data: listaLimpia, 
-                    ultima_actualizacion: new Date().toISOString()
-                });
+        // INICIALIZACIÓN SEGURA
+        if (!firebase.apps.length) {
+            try {
+                firebase.initializeApp(firebaseConfig);
+            } catch (e) {
+                console.error("Error inicializando Firebase. ¿Pegaste las claves?", e);
             }
-            
-            const ops = document.getElementById('config-operarios').value;
-            await db.collection(COLL_CONFIG).doc("operarios_lista").set({ lista: ops });
-            
-            alert("✅ DATOS GUARDADOS. AHORA PYTHON FUNCIONARÁ.");
-            location.reload(); // Recargar para aplicar
-        } catch(e) { 
-            alert("Error: " + e.message); 
-        } finally {
-            btn.innerText = "💾 GUARDAR CAMBIOS Y SINCRONIZAR"; btn.disabled = false;
         }
-    }
+        const db = firebase.firestore();
 
-    // Procesador CSV Simple
-    function procesarProductosCSV(textoCSV, categoria) {
-        const lineas = textoCSV.split('\n');
-        const productos = [];
-        lineas.forEach(linea => {
-            const partes = linea.split(',');
-            if (partes.length >= 2) {
-                const id = partes[0].trim();
-                const nombre = partes[1].trim();
-                if (id && nombre) {
-                    productos.push({
-                        id: id,
-                        nombre: nombre,
-                        unidad: partes[2]?.trim() || 'Unidad',
-                        alterno: partes[3]?.trim() || '-',
-                        factor: partes[4]?.trim() || '1',
-                        stockInicial: partes[5]?.trim() || '0',
-                        categoria: categoria
+        // =================================================================
+        // LÓGICA DEL SISTEMA
+        // =================================================================
+        
+        // 1. NAVEGACIÓN
+        function mostrarVista(vistaId) {
+            document.querySelectorAll('.vista').forEach(v => v.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(t => t.classList.remove('active'));
+            
+            document.getElementById('vista-' + vistaId).classList.add('active');
+            // Activar tab correspondiente (lógica simple)
+            const tabs = document.querySelectorAll('.nav-item');
+            if(vistaId === 'cargar') tabs[0].classList.add('active');
+            if(vistaId === 'historial') tabs[1].classList.add('active');
+            if(vistaId === 'config') tabs[2].classList.add('active');
+        }
+
+        // 2. CARGAR PRODUCTOS EN SELECT (Pestaña Cargar)
+        async function cargarProductos() {
+            const cat = document.getElementById('sel-categoria').value;
+            const select = document.getElementById('sel-producto');
+            select.innerHTML = '<option>Cargando...</option>';
+
+            try {
+                const doc = await db.collection('configuracion').doc('productos_' + cat).get();
+                select.innerHTML = '';
+                
+                if (doc.exists && doc.data().json_data) {
+                    const productos = doc.data().json_data;
+                    productos.sort((a, b) => a.nombre.localeCompare(b.nombre)); // Ordenar A-Z
+                    
+                    productos.forEach(p => {
+                        const opt = document.createElement('option');
+                        opt.value = p.id;
+                        opt.text = p.nombre;
+                        select.appendChild(opt);
                     });
+                } else {
+                    select.innerHTML = '<option>No hay productos cargados</option>';
+                }
+            } catch (error) {
+                console.error(error);
+                select.innerHTML = '<option>Error cargando</option>';
+            }
+        }
+
+        // 3. GUARDAR MOVIMIENTO (Producción)
+        async function guardarMovimiento() {
+            const categoria = document.getElementById('sel-categoria').value;
+            const productoId = document.getElementById('sel-producto').value;
+            const productoNombre = document.getElementById('sel-producto').options[document.getElementById('sel-producto').selectedIndex].text;
+            const accion = document.getElementById('sel-accion').value;
+            const cantidad = parseFloat(document.getElementById('inp-cantidad').value);
+            const operario = document.getElementById('sel-operario').value;
+
+            if (!productoId || isNaN(cantidad) || cantidad <= 0) {
+                alert("Por favor, complete todos los campos correctamente.");
+                return;
+            }
+
+            try {
+                // A) Guardar en Historial
+                await db.collection('movimientos').add({
+                    fecha: new Date().toISOString(), // Fecha ISO completa para orden
+                    fecha_corta: new Date().toLocaleDateString(),
+                    productoId: productoId,
+                    productoNombre: productoNombre,
+                    categoria: categoria,
+                    tipo: accion,
+                    cantidadBase: cantidad, // Siempre positivo aquí, la lógica de resta se hace al leer
+                    operario: operario,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                });
+
+                mostrarMensaje('mensaje-exito', 'Movimiento guardado correctamente.');
+                document.getElementById('inp-cantidad').value = '';
+                
+            } catch (error) {
+                console.error(error);
+                mostrarMensaje('mensaje-error', 'Error al guardar: ' + error.message);
+            }
+        }
+
+        // 4. HISTORIAL
+        async function cargarHistorial() {
+            const tbody = document.querySelector('#tabla-historial tbody');
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center">Cargando...</td></tr>';
+
+            try {
+                // Traer últimos 20 movimientos
+                const q = await db.collection('movimientos')
+                                  .orderBy('timestamp', 'desc')
+                                  .limit(20)
+                                  .get();
+
+                tbody.innerHTML = '';
+                q.forEach(doc => {
+                    const d = doc.data();
+                    const fecha = d.timestamp ? d.timestamp.toDate().toLocaleString() : 'Reciente';
+                    const color = d.tipo === 'SALIDA' ? '#dc3545' : (d.tipo === 'ENTRADA' ? '#28a745' : '#007bff');
+                    
+                    const row = `<tr>
+                        <td>${fecha}</td>
+                        <td>${d.productoNombre}</td>
+                        <td style="color:${color}; font-weight:bold">${d.tipo}</td>
+                        <td>${d.cantidadBase}</td>
+                        <td>${d.operario || '-'}</td>
+                    </tr>`;
+                    tbody.innerHTML += row;
+                });
+            } catch (error) {
+                tbody.innerHTML = '<tr><td colspan="5">Error cargando historial</td></tr>';
+            }
+        }
+
+        // 5. CONFIGURACIÓN (LO MÁS IMPORTANTE PARA PYTHON)
+        async function cargarConfiguracion() {
+            const cats = ['panaderia', 'pasteleria', 'cocina'];
+            
+            for (const c of cats) {
+                const doc = await db.collection('configuracion').doc('productos_' + c).get();
+                if (doc.exists) {
+                    document.getElementById('config-' + c).value = doc.data().csv || '';
                 }
             }
-        });
-        return productos;
-    }
+            
+            const ops = await db.collection('configuracion').doc('operarios_lista').get();
+            if (ops.exists) {
+                document.getElementById('config-operarios').value = ops.data().lista || '';
+            }
+            
+            cargarOperariosSelect(); // Actualizar desplegable
+        }
 
-    // ... (El resto de funciones de carga, historial, etc. se mantienen igual)
-    // Para simplificar, enfócate en que la función guardarConfiguracion sea la de arriba.
-</script>
+        async function guardarConfiguracion() {
+            const btn = document.querySelector('#vista-config button');
+            btn.innerText = "GUARDANDO... ESPERE";
+            btn.disabled = true;
+
+            try {
+                const cats = ['panaderia', 'pasteleria', 'cocina'];
+                
+                for (const c of cats) {
+                    const csv = document.getElementById('config-' + c).value;
+                    const jsonData = procesarCSV(csv, c);
+                    
+                    // ESTO ES LO QUE ARREGLA EL PYTHON: Guardar 'json_data' limpio
+                    await db.collection('configuracion').doc('productos_' + c).set({
+                        csv: csv,
+                        json_data: jsonData,
+                        ultima_actualizacion: new Date().toISOString()
+                    });
+                }
+
+                // Guardar Operarios
+                const listaOps = document.getElementById('config-operarios').value;
+                await db.collection('configuracion').doc('operarios_lista').set({ lista: listaOps });
+
+                alert("✅ Configuración guardada y sistema sincronizado.");
+                cargarOperariosSelect();
+                cargarProductos(); // Recargar select principal
+
+            } catch (error) {
+                alert("Error al guardar: " + error.message);
+            } finally {
+                btn.innerText = "💾 GUARDAR CAMBIOS Y SINCRONIZAR";
+                btn.disabled = false;
+            }
+        }
+
+        // Función auxiliar para convertir el CSV del usuario en objetos para Python
+        function procesarCSV(csvText, categoria) {
+            const lineas = csvText.split('\n');
+            const resultado = [];
+            
+            lineas.forEach(linea => {
+                const campos = linea.split(',');
+                if (campos.length >= 2) {
+                    const id = campos[0].trim();
+                    const nombre = campos[1].trim();
+                    if (id && nombre) {
+                        resultado.push({
+                            id: id,
+                            nombre: nombre,
+                            unidad: campos[2] ? campos[2].trim() : 'Unidad',
+                            alterno: campos[3] ? campos[3].trim() : '-',
+                            factor: campos[4] ? campos[4].trim() : '1',
+                            stockInicial: campos[5] ? campos[5].trim() : '0',
+                            categoria: categoria
+                        });
+                    }
+                }
+            });
+            return resultado;
+        }
+
+        async function cargarOperariosSelect() {
+            const select = document.getElementById('sel-operario');
+            select.innerHTML = '<option value="-">-- Seleccionar --</option>';
+            try {
+                const doc = await db.collection('configuracion').doc('operarios_lista').get();
+                if (doc.exists && doc.data().lista) {
+                    const lista = doc.data().lista.split(',');
+                    lista.forEach(op => {
+                        const opt = document.createElement('option');
+                        opt.value = op.trim();
+                        opt.text = op.trim();
+                        select.appendChild(opt);
+                    });
+                }
+            } catch(e) {}
+        }
+
+        function mostrarMensaje(id, texto) {
+            const el = document.getElementById(id);
+            el.innerText = texto;
+            el.style.display = 'block';
+            setTimeout(() => { el.style.display = 'none'; }, 3000);
+        }
+
+        // INICIALIZAR
+        cargarConfiguracion();
+        cargarProductos();
+
+    </script>
 </body>
 </html>
