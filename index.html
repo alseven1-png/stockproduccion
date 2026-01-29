@@ -240,23 +240,9 @@
                         </div>`;
                 });
             }
-            actualizarGraficos(produccionDia, productosGlobal);
-            publicarStockActual(stockMap);
-            }
-
-        }
-        async function publicarStockActual(stockMap) {
-    try {
-        await db.collection("configuracion").doc("stock_actual").set({
-            fecha: obtenerFechaHoyYMD(),
-            actualizado: new Date().toISOString(),
-            stock: stockMap
-        });
-        console.log("✅ Stock actual publicado para POS");
-    } catch (e) {
-        console.error("❌ Error publicando stock:", e);
-    }
+           actualizarGraficos(produccionDia, productosGlobal);
 }
+
 
         let chartInstance = null;
         function actualizarGraficos(dataMap, productos) {
