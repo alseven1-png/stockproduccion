@@ -15,7 +15,7 @@
 
     <script>
         // ============================================================
-        // 1. CONFIGURACIÓN (TUS CLAVES ORIGINALES)
+        // 1. CONFIGURACIÓN (TUS CLAVES ORIGINALES - NO TOCADAS)
         // ============================================================
         const CLAVE_ADMIN = "2550LP"; 
         
@@ -77,7 +77,7 @@
             return csvText.split('\n').map(l => l.trim()).filter(l => l.length > 0).map((l, i) => {
                 const p = l.split('|').map(s => s.trim());
                 return { 
-                    id: `${categoria}_${i}`, // ID Compatible con historial viejo
+                    id: `${categoria}_${i}`, 
                     categoria: categoria,
                     nombre: p[0], 
                     unidad: p[1] || 'Unidad', 
@@ -127,16 +127,33 @@
             if(actual) sel.value = actual;
         }
 
+        // ============================================================
+        // MEJORA DE VELOCIDAD: Solo cargamos las últimas 24 horas
+        // ============================================================
         function escucharMovimientos() {
-            db.collection(COLL_MOVIMIENTOS).orderBy("timestamp", "desc").onSnapshot((snapshot) => {
+            const limiteCarga = new Date();
+            limiteCarga.setHours(limiteCarga.getHours() - 24); // Solo datos de ayer y hoy
+
+            db.collection(COLL_MOVIMIENTOS)
+              .where("timestamp", ">=", limiteCarga.toISOString())
+              .orderBy("timestamp", "desc")
+              .onSnapshot((snapshot) => {
                 movimientosGlobal = [];
                 snapshot.forEach((doc) => movimientosGlobal.push({ id: doc.id, ...doc.data() }));
                 actualizarPanelPrincipal();
                 actualizarHistorialVisual(); 
+            }, (error) => {
+                console.error("Error en Firebase:", error);
+                // Si falla por falta de índice, cargamos normal (compatible)
+                db.collection(COLL_MOVIMIENTOS).orderBy("timestamp", "desc").limit(100).onSnapshot((snap) => {
+                    movimientosGlobal = [];
+                    snap.forEach((doc) => movimientosGlobal.push({ id: doc.id, ...doc.data() }));
+                    actualizarPanelPrincipal();
+                    actualizarHistorialVisual();
+                });
             });
         }
 
-        // --- CORE DEL SISTEMA (PANEL) ---
         window.actualizarPanelPrincipal = function() {
             const filtroFechaInput = document.getElementById('filtro-fecha-panel');
             const fechaSeleccionada = filtroFechaInput ? filtroFechaInput.value : obtenerFechaHoyYMD();
@@ -152,14 +169,11 @@
 
             [...movimientosGlobal].reverse().forEach(m => {
                 if (stockMap[m.productoId] !== undefined) {
-                    // Cálculo de Stock
                     if(m.tipo === 'ENTRADA') stockMap[m.productoId] += Math.abs(m.cantidadBase);
                     else stockMap[m.productoId] -= Math.abs(m.cantidadBase);
 
-                    // Filtrado por Fecha para Reporte
                     if (m.fecha.startsWith(fechaSeleccionada)) {
                         const cant = Math.abs(m.cantidadBase);
-                        
                         if (m.tipo === 'ENTRADA') { 
                             produccionDia[m.productoId] = (produccionDia[m.productoId] || 0) + cant;
                             totalProd += cant;
@@ -175,7 +189,6 @@
                 }
             });
 
-            // UI Updates
             const [yyyy, mm, dd] = fechaSeleccionada.split('-');
             const labelFecha = document.getElementById('label-fecha-tabla');
             if(labelFecha) labelFecha.innerText = `${dd}/${mm}/${yyyy}`;
@@ -203,10 +216,8 @@
                     const prod = produccionDia[p.id] || 0;
                     const desc = descarteDia[p.id] || 0;
                     const reut = reutilizacionDia[p.id] || 0;
-                    
                     if (prod > 0 || desc > 0 || reut > 0) {
                         hayDatos = true;
-                        // Venta = Prod - (Reutilizacion + Descarte)
                         const ventaEst = prod - reut - desc;
                         tbody.innerHTML += `
                             <tr class="border-b border-gray-100 hover:bg-gray-50 text-xs sm:text-sm">
@@ -218,7 +229,7 @@
                             </tr>`;
                     }
                 });
-                if (!hayDatos) tbody.innerHTML = '<tr><td colspan="5" class="text-center py-6 text-gray-400 italic text-xs">Sin movimientos en esta fecha</td></tr>';
+                if (!hayDatos) tbody.innerHTML = '<tr><td colspan="5" class="text-center py-6 text-gray-400 italic text-xs">Sin movimientos recientes</td></tr>';
             }
 
             const grid = document.getElementById('grid-stock');
@@ -240,9 +251,8 @@
                         </div>`;
                 });
             }
-           actualizarGraficos(produccionDia, productosGlobal);
-}
-
+            actualizarGraficos(produccionDia, productosGlobal);
+        }
 
         let chartInstance = null;
         function actualizarGraficos(dataMap, productos) {
@@ -360,19 +370,16 @@
                 s.add(new Option("Unidad", "manual_unidad"));
                 s.add(new Option("Docena", "manual_docena"));
                 s.add(new Option("Kilogramo (Kg)", "manual_kg"));
-                
                 const isStandard = ['Docena', 'Kg', 'Unidad'].includes(p.alterno); 
                 if(p.alterno && p.alterno !== '-' && !isStandard) {
                     s.add(new Option(`${p.alterno} (x${p.factor} ${p.unidad})`, "alterno"));
                 }
-                
                 if (p.unidad.includes('Unidad')) s.value = "manual_unidad";
                 else if (p.unidad.includes('Kg')) s.value = "manual_kg";
                 else if (p.unidad.includes('Docena')) s.value = "manual_docena";
             }
         }
 
-        // --- HISTORIAL ---
         window.toggleModoHistorial = function() {
             modoHistorial = modoHistorial === 'cronologico' ? 'agrupado' : 'cronologico';
             const btn = document.getElementById('btn-toggle-historial');
@@ -391,9 +398,8 @@
             const div = document.getElementById('contenedor-historial');
             if (!div) return;
             div.innerHTML = '';
-
             if (movimientosGlobal.length === 0) {
-                div.innerHTML = '<p class="text-gray-400 text-center py-4">Sin movimientos</p>';
+                div.innerHTML = '<p class="text-gray-400 text-center py-4">Sin movimientos recientes</p>';
                 return;
             }
 
@@ -405,11 +411,9 @@
                     gruposDia[dia].push(m);
                 });
                 const diasOrdenados = Object.keys(gruposDia).sort().reverse();
-
                 diasOrdenados.forEach(dia => {
                     const [yyyy, mm, dd] = dia.split('-');
                     let html = `<div class="mb-4"><h4 class="bg-gray-200 px-3 py-1 text-xs font-bold text-gray-600 rounded mb-2 sticky top-0">${dd}/${mm}/${yyyy}</h4><div class="bg-white border rounded shadow-sm divide-y">`;
-                    
                     gruposDia[dia].forEach(m => {
                         const hora = m.fecha.slice(11,16);
                         let color = 'text-gray-600', etiqueta = '';
@@ -417,9 +421,7 @@
                         else if(m.tipo === 'DESCARTE' || m.tipo === 'SOBRANTE') { color = 'text-red-600'; etiqueta="DESC"; }
                         else if(m.tipo === 'REUTILIZACION') { color = 'text-orange-500'; etiqueta="REUT"; }
                         else { color = 'text-blue-600'; etiqueta="VENTA"; }
-
                         const btnDel = isAdminUnlocked ? `<button onclick="eliminarMovimiento('${m.id}')" class="text-red-400 hover:text-red-600 ml-2"><i class="fas fa-trash-alt"></i></button>` : '';
-
                         html += `
                             <div class="p-2 flex justify-between items-center hover:bg-gray-50">
                                 <div class="flex items-center gap-3 overflow-hidden">
@@ -440,13 +442,11 @@
                     div.innerHTML += html;
                 });
             } else {
-                // Modo Agrupado (Lista de Productos)
                 const gruposProd = {};
                 movimientosGlobal.forEach(m => {
                     if (!gruposProd[m.productoId]) gruposProd[m.productoId] = [];
                     gruposProd[m.productoId].push(m);
                 });
-
                 productosGlobal.forEach(prod => {
                     if (gruposProd[prod.id] && gruposProd[prod.id].length > 0) {
                         const movs = gruposProd[prod.id];
@@ -456,10 +456,8 @@
                              if(m.tipo === 'ENTRADA') color = 'text-green-600';
                              else if(m.tipo === 'DESCARTE' || m.tipo === 'SOBRANTE') color = 'text-red-600';
                              else if(m.tipo === 'REUTILIZACION') color = 'text-orange-500';
-                             
                              const fechaFmt = `${m.fecha.slice(8,10)}/${m.fecha.slice(5,7)} ${m.fecha.slice(11,16)}`;
                              const btnDel = isAdminUnlocked ? `<button onclick="eliminarMovimiento('${m.id}')" class="text-red-400 hover:text-red-600 ml-2"><i class="fas fa-trash-alt"></i></button>` : '';
-                             
                              itemsHtml += `<div class="flex justify-between text-xs border-b border-gray-100 py-1 px-2">
                                 <span class="text-gray-500">${fechaFmt} - ${m.operario}</span>
                                 <span class="font-bold ${color}">${m.tipo === 'ENTRADA' ? '+' : '-'}${Math.abs(m.cantidadOriginal)} ${m.formatoUsado}${btnDel}</span>
@@ -478,74 +476,57 @@
             }
         }
 
-        // --- ADMIN ---
         function verificarAdmin() {
             if (isAdminUnlocked) return true;
             if (prompt("Contraseña Administrador:") === CLAVE_ADMIN) {
                 isAdminUnlocked = true;
-                actualizarHistorialVisual(); // Forzar actualización para mostrar tachos
+                actualizarHistorialVisual();
                 return true;
             }
             return false;
         }
 
         window.cambiarVista = function(id) {
-            // Verificar admin al entrar a config
             if (id === 'vista-config' && !verificarAdmin()) return;
-            
             const btnConf = document.getElementById('btn-vista-config');
             if(isAdminUnlocked && btnConf) {
                  btnConf.innerHTML = '<i class="fas fa-unlock block mb-1 text-lg"></i>Admin';
                  btnConf.classList.add('text-green-200');
             }
-
             document.querySelectorAll('.vista').forEach(d => d.classList.add('hidden'));
             document.getElementById(id).classList.remove('hidden');
-            
             document.querySelectorAll('.nav-btn').forEach(b => {
                 b.classList.remove('border-amber-300', 'text-white');
                 b.classList.add('border-transparent', 'text-amber-100');
             });
             document.getElementById('btn-' + id).classList.add('border-amber-300', 'text-white');
-            
             if(id === 'vista-panel') actualizarPanelPrincipal(); 
             if(id === 'vista-carga') filtrarProductos('panaderia'); 
             if(id === 'vista-historial') actualizarHistorialVisual(); 
         }
         
-        // =========================================================================
-        // ⭐ FUNCIÓN ACTUALIZADA: GUARDA Y CREA EL ENLACE PARA PYTHON ⭐
-        // =========================================================================
         window.guardarConfiguracion = async function() {
             if (!verificarAdmin()) return;
-            
-            const btn = document.querySelector('#vista-config button'); // El botón de guardar
+            const btn = document.querySelector('#vista-config button');
             const textoOriginal = btn.innerText;
             btn.innerText = "GUARDANDO Y SINCRONIZANDO...";
             btn.disabled = true;
-
             try {
                 for (const key of ORDEN_CATEGORIAS) {
                     const val = document.getElementById(`config-${key}`).value;
-                    
-                    // AQUI OCURRE LA MAGIA: Convertimos el texto a Objetos para Python
                     const listaLimpia = procesarProductosCSV(val, key);
-
                     await db.collection(COLL_CONFIG).doc(`productos_${key}`).set({ 
                         csv: val,
-                        json_data: listaLimpia, // <--- ESTO ES LO QUE BUSCA PYTHON
+                        json_data: listaLimpia,
                         ultima_actualizacion: new Date().toISOString()
                     });
                 }
-                
                 const ops = document.getElementById('config-operarios').value;
                 await db.collection(COLL_CONFIG).doc("operarios_lista").set({ lista: ops });
-                
                 await cargarConfiguracionGeneral();
-                alert("✅ Guardado y Sincronizado correctamente con el Punto de Venta.");
-            } catch(e) { 
-                alert("Error: " + e.message); 
-            } finally {
+                alert("✅ Guardado y Sincronizado correctamente.");
+            } catch(e) { alert("Error: " + e.message); } 
+            finally {
                 btn.innerText = textoOriginal;
                 btn.disabled = false;
             }
@@ -564,7 +545,6 @@
             } catch (e) { alert(e.message); }
         }
 
-        // --- INICIO ---
         document.addEventListener('DOMContentLoaded', () => {
             auth.signInAnonymously().catch(e => console.error(e));
             auth.onAuthStateChanged(user => {
@@ -608,135 +588,180 @@
     </div>
 
     <main class="flex-1 overflow-y-auto bg-gray-50 p-2 sm:p-4 pb-20">
-
         <div id="vista-panel" class="vista container mx-auto max-w-5xl space-y-4">
             <div class="bg-white p-3 rounded-lg shadow-sm border border-gray-200 flex justify-between items-center">
                 <div class="flex items-center gap-2">
-                    <span class="text-xs font-bold text-gray-500 uppercase"><i class="far fa-calendar-alt mr-1"></i>Día:</span>
-                    <input type="date" id="filtro-fecha-panel" onchange="actualizarPanelPrincipal()" class="border rounded px-2 py-1 text-sm font-bold text-gray-700 bg-gray-50 outline-none">
+                    <i class="fas fa-calendar-alt text-amber-600"></i>
+                    <input type="date" id="filtro-fecha-panel" onchange="actualizarPanelPrincipal()" class="border-none font-bold text-gray-700 focus:ring-0 cursor-pointer">
                 </div>
-                <button onclick="actualizarPanelPrincipal()" class="text-amber-600 p-2"><i class="fas fa-sync-alt"></i></button>
-            </div>
-
-            <div class="grid grid-cols-3 gap-2">
-                <div class="bg-white p-3 rounded shadow-sm border-l-4 border-green-500">
-                    <p class="text-[10px] text-gray-400 uppercase font-bold">Producción</p>
-                    <p class="text-xl font-bold text-gray-800" id="kpi-prod-total">0</p>
-                </div>
-                <div class="bg-white p-3 rounded shadow-sm border-l-4 border-red-500">
-                    <p class="text-[10px] text-gray-400 uppercase font-bold">Descarte</p>
-                    <p class="text-xl font-bold text-red-600" id="kpi-descarte-total">0</p>
-                </div>
-                <div class="bg-white p-3 rounded shadow-sm border-l-4 border-gray-500">
-                    <p class="text-[10px] text-gray-400 uppercase font-bold">% Pérdida</p>
-                    <p class="text-xl font-bold text-gray-800" id="kpi-porcentaje-merma">0%</p>
+                <div class="text-right">
+                    <span class="text-[10px] text-gray-400 block uppercase">Actualizado</span>
+                    <span class="text-xs font-mono text-gray-500" id="last-update">En línea</span>
                 </div>
             </div>
 
-            <div class="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
-                <div class="bg-gray-50 px-4 py-2 border-b flex justify-between items-center">
-                    <h2 class="font-bold text-gray-700 text-sm">Detalle: <span id="label-fecha-tabla" class="text-amber-600">Hoy</span></h2>
-                    <div class="flex gap-2 text-[9px] sm:text-[10px] font-bold uppercase">
-                        <span class="text-green-600">Prod</span> | <span class="text-orange-500">Reut</span> | <span class="text-red-600">Desc</span>
+            <div class="grid grid-cols-3 gap-2 sm:gap-4">
+                <div class="bg-white p-3 rounded-xl border border-gray-100 shadow-sm text-center">
+                    <span class="text-[9px] sm:text-xs text-gray-400 block uppercase font-bold">Producción</span>
+                    <span id="kpi-prod-total" class="text-xl font-bold text-green-600">0</span>
+                </div>
+                <div class="bg-white p-3 rounded-xl border border-gray-100 shadow-sm text-center">
+                    <span class="text-[9px] sm:text-xs text-gray-400 block uppercase font-bold">Descarte</span>
+                    <span id="kpi-descarte-total" class="text-xl font-bold text-red-500">0</span>
+                </div>
+                <div class="bg-white p-3 rounded-xl border border-gray-100 shadow-sm text-center">
+                    <span class="text-[9px] sm:text-xs text-gray-400 block uppercase font-bold">% Merma</span>
+                    <span id="kpi-porcentaje-merma" class="text-xl font-bold text-gray-800">0%</span>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                    <div class="bg-gray-50 px-4 py-2 border-b border-gray-100 flex justify-between items-center">
+                        <h3 class="font-bold text-gray-700 text-sm">Detalle de Producción <span id="label-fecha-tabla" class="text-amber-700"></span></h3>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left">
+                            <thead class="bg-gray-50 text-[10px] uppercase text-gray-400">
+                                <tr>
+                                    <th class="py-2 pl-3">Producto</th>
+                                    <th class="py-2 text-center">Prod</th>
+                                    <th class="py-2 text-center">Reut</th>
+                                    <th class="py-2 text-center">Desc</th>
+                                    <th class="py-2 text-center">Venta Est.</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tabla-produccion-hoy" class="divide-y divide-gray-50"></tbody>
+                        </table>
                     </div>
                 </div>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-sm">
-                        <thead class="bg-gray-100 text-[10px] text-gray-500 uppercase border-b">
-                            <tr>
-                                <th class="text-left py-2 pl-4">Producto</th>
-                                <th class="text-center py-2 w-12 text-green-700">Prod</th>
-                                <th class="text-center py-2 w-12 text-orange-600">Reut</th>
-                                <th class="text-center py-2 w-12 text-red-600 bg-red-50">Desc</th>
-                                <th class="text-center py-2 w-16 text-blue-700">Vta.Est</th>
-                            </tr>
-                        </thead>
-                        <tbody id="tabla-produccion-hoy" class="divide-y divide-gray-100"></tbody>
-                    </table>
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center">
+                    <h3 class="font-bold text-gray-700 text-sm mb-4 w-full">Distribución por Producto</h3>
+                    <div class="relative h-48 w-full">
+                        <canvas id="graficoProduccion"></canvas>
+                    </div>
                 </div>
             </div>
-            
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                    <h3 class="font-bold text-gray-700 text-xs mb-2 uppercase">Stock Físico Actual</h3>
-                    <div id="grid-stock" class="grid grid-cols-2 gap-2 max-h-60 overflow-y-auto pr-1 pb-2"></div>
-                </div>
-                <div class="bg-white p-2 rounded shadow h-60 border">
-                    <h3 class="font-bold text-gray-700 text-xs mb-1 text-center">Distribución Producción</h3>
-                    <div class="h-48 relative"><canvas id="graficoProduccion"></canvas></div>
-                </div>
+
+            <div>
+                <h3 class="font-bold text-gray-500 text-xs uppercase mb-3 flex items-center gap-2">
+                    <i class="fas fa-boxes"></i> Stock Actual Calculado
+                </h3>
+                <div id="grid-stock" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2"></div>
             </div>
         </div>
 
-        <div id="vista-carga" class="vista hidden container mx-auto max-w-md">
-            <div class="bg-white p-4 rounded-lg shadow-lg border-t-4 border-amber-500 space-y-4">
-                <h2 class="text-lg font-bold text-gray-800 text-center border-b pb-2">Nuevo Movimiento</h2>
-                <div class="flex justify-between bg-gray-100 p-1 rounded-lg gap-1">
-                    <button id="btn-cat-panaderia" onclick="filtrarProductos('panaderia')" class="cat-btn flex-1 py-2 text-[10px] uppercase font-bold rounded hover:bg-amber-100">Panadería</button>
-                    <button id="btn-cat-pasteleria" onclick="filtrarProductos('pasteleria')" class="cat-btn flex-1 py-2 text-[10px] uppercase font-bold rounded hover:bg-amber-100">Pastelería</button>
-                    <button id="btn-cat-cocina" onclick="filtrarProductos('cocina')" class="cat-btn flex-1 py-2 text-[10px] uppercase font-bold rounded hover:bg-amber-100">Cocina</button>
+        <div id="vista-carga" class="vista hidden container mx-auto max-w-2xl">
+            <div class="bg-white rounded-2xl shadow-xl overflow-hidden">
+                <div class="bg-amber-800 p-4 text-white">
+                    <h2 class="text-lg font-bold flex items-center gap-2"><i class="fas fa-plus-circle"></i> Nueva Entrada de Mercadería</h2>
                 </div>
-                <form onsubmit="guardarMovimiento(event)" class="space-y-3">
-                    <div>
-                        <label class="block text-[10px] font-bold text-gray-400 uppercase">Producto</label>
-                        <select id="producto" onchange="actualizarFormato()" required class="input-field w-full bg-gray-50 border p-2 rounded"></select>
-                    </div>
-                    <div class="flex gap-2">
-                        <div class="w-1/2">
-                            <label class="block text-[10px] font-bold text-gray-400 uppercase">Acción</label>
-                            <select id="tipo" onchange="actualizarFormato()" class="input-field w-full p-2 rounded border font-bold">
-                                <option value="ENTRADA">🟢 PRODUCCIÓN (+)</option>
-                                <option value="DESCARTE">🔴 DESCARTE (-)</option>
-                                <option value="REUTILIZACION">🟠 REUTILIZACIÓN (-)</option>
-                                <option value="SALIDA">🔵 VENTA / SALIDA (-)</option>
+                
+                <div class="p-4 grid grid-cols-3 gap-2">
+                    <button id="btn-cat-panaderia" onclick="filtrarProductos('panaderia')" class="cat-btn py-2 rounded-lg text-xs font-bold border transition">PANADERIA</button>
+                    <button id="btn-cat-pasteleria" onclick="filtrarProductos('pasteleria')" class="cat-btn py-2 rounded-lg text-xs font-bold border transition">PASTELERIA</button>
+                    <button id="btn-cat-cocina" onclick="filtrarProductos('cocina')" class="cat-btn py-2 rounded-lg text-xs font-bold border transition">COCINA</button>
+                </div>
+
+                <form onsubmit="guardarMovimiento(event)" class="p-4 space-y-4">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Producto</label>
+                            <select id="producto" onchange="actualizarFormato()" required class="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-amber-500 outline-none text-sm"></select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Tipo de Movimiento</label>
+                            <select id="tipo" onchange="actualizarFormato()" class="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-amber-500 outline-none text-sm">
+                                <option value="ENTRADA">PRODUCCIÓN (+)</option>
+                                <option value="REUTILIZACION">REUTILIZACIÓN (-)</option>
+                                <option value="DESCARTE">DESCARTE / MERMA (-)</option>
+                                <option value="SOBRANTE">SOBRANTE (-)</option>
                             </select>
                         </div>
-                        <div class="w-1/2">
-                            <label class="block text-[10px] font-bold text-gray-400 uppercase">Formato</label>
-                            <select id="formato" class="input-field w-full bg-amber-50 text-amber-900 p-2 rounded border"></select>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Formato</label>
+                            <select id="formato" class="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-amber-500 outline-none text-sm"></select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Cantidad</label>
+                            <input type="number" id="cantidad" step="0.1" required class="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-amber-500 outline-none text-sm" placeholder="0.0">
                         </div>
                     </div>
-                    <div>
-                        <label class="block text-[10px] font-bold text-gray-400 uppercase">Cantidad</label>
-                        <input type="number" id="cantidad" step="0.001" required class="w-full text-center text-3xl font-bold text-amber-600 border rounded py-2 outline-none" placeholder="0">
-                    </div>
-                    <div class="flex gap-2">
-                        <div class="w-1/2">
-                            <label class="block text-[10px] font-bold text-gray-400 uppercase">Operario</label>
-                            <select id="operario" class="w-full border p-2 rounded bg-gray-50 text-sm"></select>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Operario / Turno</label>
+                            <select id="operario" required class="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-amber-500 outline-none text-sm"></select>
                         </div>
-                        <div class="w-1/2">
-                            <label class="block text-[10px] font-bold text-gray-400 uppercase">Fecha Real</label>
-                            <input type="datetime-local" id="fecha" required class="w-full border p-2 rounded bg-gray-50 text-xs">
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Fecha y Hora</label>
+                            <input type="datetime-local" id="fecha" required class="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-amber-500 outline-none text-sm">
                         </div>
                     </div>
-                    <button type="submit" class="w-full bg-amber-600 text-white py-3 rounded-lg font-bold shadow hover:bg-amber-700 transition active:scale-95">CONFIRMAR CARGA</button>
+
+                    <button type="submit" class="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-4 rounded-xl shadow-lg transition transform active:scale-95 uppercase tracking-wider mt-4">Confirmar Carga</button>
                 </form>
             </div>
         </div>
 
-        <div id="vista-historial" class="vista hidden container mx-auto max-w-xl">
-            <div class="flex justify-between items-center mb-3">
-                <h3 class="font-bold text-gray-700 text-sm">Historial</h3>
-                <button id="btn-toggle-historial" onclick="toggleModoHistorial()" class="bg-white border text-gray-600 px-3 py-1 rounded text-xs font-bold shadow-sm hover:bg-gray-50"><i class="fas fa-layer-group mr-1"></i> Agrupar</button>
+        <div id="vista-historial" class="vista hidden container mx-auto max-w-3xl">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-bold text-gray-700 uppercase tracking-tight">Registro de Movimientos</h2>
+                <button id="btn-toggle-historial" onclick="toggleModoHistorial()" class="bg-white px-3 py-1 rounded-full text-xs font-bold border text-amber-700 shadow-sm"><i class="fas fa-layer-group mr-1"></i> Agrupar</button>
             </div>
-            <div id="contenedor-historial"></div>
+            <div id="contenedor-historial" class="space-y-2"></div>
         </div>
 
-        <div id="vista-config" class="vista hidden container mx-auto max-w-lg space-y-4">
-            <div class="bg-blue-50 text-blue-800 p-2 rounded text-center text-xs font-bold border border-blue-200"><i class="fas fa-cog"></i> Configuración</div>
-            <div class="space-y-1">
-                <label class="text-[10px] font-bold text-gray-500 uppercase">Operarios</label>
-                <textarea id="config-operarios" class="w-full border p-2 text-xs rounded h-16"></textarea>
+        <div id="vista-config" class="vista hidden container mx-auto max-w-4xl space-y-6">
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
+                <h2 class="text-xl font-bold mb-4 flex items-center gap-2"><i class="fas fa-tools text-amber-600"></i> Panel de Administración</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <h3 class="font-bold text-xs uppercase text-gray-400 mb-2">Productos (CSV: Nombre|Unidad|Alt|Factor|Stock)</h3>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="text-[10px] font-bold text-amber-700">PANADERÍA</label>
+                                <textarea id="config-panaderia" rows="4" class="w-full p-2 bg-gray-50 border rounded font-mono text-xs"></textarea>
+                            </div>
+                            <div>
+                                <label class="text-[10px] font-bold text-amber-700">PASTELERÍA</label>
+                                <textarea id="config-pasteleria" rows="4" class="w-full p-2 bg-gray-50 border rounded font-mono text-xs"></textarea>
+                            </div>
+                            <div>
+                                <label class="text-[10px] font-bold text-amber-700">COCINA</label>
+                                <textarea id="config-cocina" rows="4" class="w-full p-2 bg-gray-50 border rounded font-mono text-xs"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="space-y-6">
+                        <div>
+                            <h3 class="font-bold text-xs uppercase text-gray-400 mb-2">Operarios (Uno por línea)</h3>
+                            <textarea id="config-operarios" rows="4" class="w-full p-2 bg-gray-50 border rounded font-mono text-xs"></textarea>
+                        </div>
+                        <div class="bg-red-50 p-4 rounded-xl border border-red-100">
+                            <h3 class="text-red-700 font-bold text-sm mb-2">Zona de Peligro</h3>
+                            <button onclick="limpiarBaseDeDatos()" class="w-full bg-white border border-red-200 text-red-600 py-2 rounded text-xs font-bold hover:bg-red-600 hover:text-white transition">REINICIAR TODA LA BASE DE DATOS</button>
+                        </div>
+                    </div>
+                </div>
+                <button onclick="guardarConfiguracion()" class="w-full bg-green-600 text-white font-bold py-4 rounded-xl mt-6 shadow-md hover:bg-green-700 transition">GUARDAR CAMBIOS Y SINCRONIZAR</button>
             </div>
-            <div class="space-y-2">
-                <p class="text-xs font-bold text-gray-700 border-b pb-1">Productos (Orden Fijo)</p>
-                <div><label class="text-[10px] font-bold text-amber-600">PANADERÍA</label><textarea id="config-panaderia" class="w-full border p-2 text-[10px] font-mono rounded h-24 bg-gray-50"></textarea></div>
-                <div><label class="text-[10px] font-bold text-pink-600">PASTELERÍA</label><textarea id="config-pasteleria" class="w-full border p-2 text-[10px] font-mono rounded h-24 bg-gray-50"></textarea></div>
-                <div><label class="text-[10px] font-bold text-green-600">COCINA</label><textarea id="config-cocina" class="w-full border p-2 text-[10px] font-mono rounded h-24 bg-gray-50"></textarea></div>
-            </div>
-            <button onclick="guardarConfiguracion()" class="w-full bg-blue-600 text-white py-3 rounded font-bold text-sm shadow">GUARDAR CAMBIOS</button>
         </div>
     </main>
+
+    <nav class="fixed bottom-0 w-full bg-white border-t border-gray-200 flex justify-around py-2 sm:hidden z-30 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
+        <button onclick="cambiarVista('vista-panel')" class="flex flex-col items-center gap-1 text-gray-400 focus:text-amber-700">
+            <i class="fas fa-chart-bar text-xl"></i><span class="text-[10px] font-bold">Resumen</span>
+        </button>
+        <button onclick="cambiarVista('vista-carga')" class="flex flex-col items-center gap-1 text-gray-400 focus:text-amber-700">
+            <i class="fas fa-plus-circle text-xl"></i><span class="text-[10px] font-bold">Cargar</span>
+        </button>
+        <button onclick="cambiarVista('vista-historial')" class="flex flex-col items-center gap-1 text-gray-400 focus:text-amber-700">
+            <i class="fas fa-history text-xl"></i><span class="text-[10px] font-bold">Historial</span>
+        </button>
+    </nav>
 </body>
 </html>
