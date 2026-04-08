@@ -15,7 +15,7 @@
 
     <script>
         // ============================================================
-        // 1. CONFIGURACIÓN (TUS CLAVES ORIGINALES)
+        // 1. CONFIGURACIÓN
         // ============================================================
         const CLAVE_ADMIN = "2550LP"; 
         
@@ -45,6 +45,12 @@
         const ORDEN_CATEGORIAS = ['panaderia', 'pasteleria', 'cocina'];
         const CATEGORIAS_NOMBRES = { panaderia: 'Panadería', pasteleria: 'Pastelería', cocina: 'Cocina' };
         
+        // ============================================================
+        // PASO 1: FORMATO CSV ACTUALIZADO
+        // Formato: Nombre | Unidad | Alterno | Factor | StockInicial | Precio
+        //          col[0]   col[1]   col[2]    col[3]   col[4]         col[5] ← NUEVO
+        // ============================================================
+
         // --- UTILIDADES ---
         function obtenerFechaLocal() {
             const now = new Date();
@@ -66,24 +72,35 @@
         }
 
         // --- CSV Y PRODUCTOS ---
+        // PASO 1 ► Productos por defecto ahora incluyen columna Precio (col[5])
         function getProductDefault(key) {
-             if (key === 'panaderia') return `Media Luna Dulce | Unidad | Docena | 12 | 0\nMedia Luna Salada | Unidad | Docena | 12 | 0\nFactura Rellena | Unidad | Docena | 12 | 0\nPan Francés | Kg | Unidad | 0.5 | 0\nPan Rallado | Kg | - | 1 | 0\nLibritos | Kg | Docena | 0.3 | 0`;
-             if (key === 'pasteleria') return `Tarta Frutal | Unidad | Porción | 6 | 0\nAlfajor de Maicena | Unidad | Bandeja | 10 | 0`;
-             if (key === 'cocina') return `Prepizza Tomate | Unidad | Pack | 3 | 0\nPizza Lista | Unidad | - | 1 | 0`;
+             if (key === 'panaderia') return `Media Luna Dulce | Unidad | Docena | 12 | 0 | 350\nMedia Luna Salada | Unidad | Docena | 12 | 0 | 350\nFactura Rellena | Unidad | Docena | 12 | 0 | 420\nPan Francés | Kg | Unidad | 0.5 | 0 | 800\nPan Rallado | Kg | - | 1 | 0 | 600\nLibritos | Kg | Docena | 0.3 | 0 | 950`;
+             if (key === 'pasteleria') return `Tarta Frutal | Unidad | Porción | 6 | 0 | 2500\nAlfajor de Maicena | Unidad | Bandeja | 10 | 0 | 450`;
+             if (key === 'cocina') return `Prepizza Tomate | Unidad | Pack | 3 | 0 | 1200\nPizza Lista | Unidad | - | 1 | 0 | 2800`;
             return '';
         }
         
+        // PASO 1 ► procesarProductosCSV ahora lee col[5] como precio
         function procesarProductosCSV(csvText, categoria) {
             return csvText.split('\n').map(l => l.trim()).filter(l => l.length > 0).map((l, i) => {
                 const p = l.split('|').map(s => s.trim());
+
+                // Generamos un ID estable basado en el nombre (no en el índice)
+                // Esto evita que reordenar el CSV rompa el historial de movimientos
+                const nombreSlug = (p[0] || '').toLowerCase()
+                    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // quita tildes
+                    .replace(/[^a-z0-9]+/g, '-')                      // reemplaza espacios/especiales
+                    .replace(/^-|-$/g, '');                           // limpia bordes
+
                 return { 
-                    id: `${categoria}_${i}`, // ID Compatible con historial viejo
+                    id: `${categoria}_${nombreSlug}`,   // ← ID estable (era: categoria_índice)
                     categoria: categoria,
-                    nombre: p[0], 
+                    nombre: p[0] || '', 
                     unidad: p[1] || 'Unidad', 
                     alterno: p[2] || '-', 
                     factor: parseFloat(p[3]) || 1, 
-                    stockInicial: parseFloat(p[4]) || 0 
+                    stockInicial: parseFloat(p[4]) || 0,
+                    precio: parseFloat(p[5]) || 0      // ← NUEVO: col[5] = precio unitario
                 };
             });
         }
@@ -95,8 +112,17 @@
                     const docRef = db.collection(COLL_CONFIG).doc(`productos_${key}`);
                     const docSnap = await docRef.get();
                     let csv = getProductDefault(key);
-                    if (docSnap.exists) csv = docSnap.data().csv;
-                    else await docRef.set({ csv: csv });
+                    if (docSnap.exists) {
+                        csv = docSnap.data().csv;
+                    } else {
+                        // Primera vez: guardar defaults con precio incluido
+                        const listaDefault = procesarProductosCSV(csv, key);
+                        await docRef.set({
+                            csv: csv,
+                            json_data: listaDefault,        // ← el POS Python leerá esto
+                            ultima_actualizacion: new Date().toISOString()
+                        });
+                    }
                     
                     const configEl = document.getElementById(`config-${key}`);
                     if(configEl) configEl.value = csv;
@@ -127,16 +153,36 @@
             if(actual) sel.value = actual;
         }
 
+        // ============================================================
+        // MEJORA: Filtrar por inicio del día (no últimas 24hs)
+        // Evita perder registros de madrugada al consultar a la mañana siguiente
+        // ============================================================
         function escucharMovimientos() {
-            db.collection(COLL_MOVIMIENTOS).orderBy("timestamp", "desc").onSnapshot((snapshot) => {
+            // Inicio del día actual a las 00:00 hora local
+            const hoy = new Date();
+            hoy.setHours(0, 0, 0, 0);
+            const inicioDia = hoy.toISOString();
+
+            db.collection(COLL_MOVIMIENTOS)
+              .where("timestamp", ">=", inicioDia)
+              .orderBy("timestamp", "desc")
+              .onSnapshot((snapshot) => {
                 movimientosGlobal = [];
                 snapshot.forEach((doc) => movimientosGlobal.push({ id: doc.id, ...doc.data() }));
                 actualizarPanelPrincipal();
                 actualizarHistorialVisual(); 
+            }, (error) => {
+                console.error("Error en Firebase:", error);
+                // Fallback sin filtro si falta el índice compuesto
+                db.collection(COLL_MOVIMIENTOS).orderBy("timestamp", "desc").limit(200).onSnapshot((snap) => {
+                    movimientosGlobal = [];
+                    snap.forEach((doc) => movimientosGlobal.push({ id: doc.id, ...doc.data() }));
+                    actualizarPanelPrincipal();
+                    actualizarHistorialVisual();
+                });
             });
         }
 
-        // --- CORE DEL SISTEMA (PANEL) ---
         window.actualizarPanelPrincipal = function() {
             const filtroFechaInput = document.getElementById('filtro-fecha-panel');
             const fechaSeleccionada = filtroFechaInput ? filtroFechaInput.value : obtenerFechaHoyYMD();
@@ -147,19 +193,17 @@
             const produccionDia = {};
             const descarteDia = {};
             const reutilizacionDia = {};
+            const ventasDia = {};           // ← NUEVO: acumula ventas del POS
             
-            let totalProd = 0, totalDesc = 0;
+            let totalProd = 0, totalDesc = 0, totalVentas = 0;
 
             [...movimientosGlobal].reverse().forEach(m => {
                 if (stockMap[m.productoId] !== undefined) {
-                    // Cálculo de Stock
                     if(m.tipo === 'ENTRADA') stockMap[m.productoId] += Math.abs(m.cantidadBase);
                     else stockMap[m.productoId] -= Math.abs(m.cantidadBase);
 
-                    // Filtrado por Fecha para Reporte
-                    if (m.fecha.startsWith(fechaSeleccionada)) {
+                    if (m.fecha && m.fecha.startsWith(fechaSeleccionada)) {
                         const cant = Math.abs(m.cantidadBase);
-                        
                         if (m.tipo === 'ENTRADA') { 
                             produccionDia[m.productoId] = (produccionDia[m.productoId] || 0) + cant;
                             totalProd += cant;
@@ -171,11 +215,15 @@
                         else if (m.tipo === 'REUTILIZACION') { 
                             reutilizacionDia[m.productoId] = (reutilizacionDia[m.productoId] || 0) + cant;
                         }
+                        else if (m.tipo === 'VENTA') {
+                            // ← NUEVO: registra ventas que el POS Python envía
+                            ventasDia[m.productoId] = (ventasDia[m.productoId] || 0) + cant;
+                            totalVentas += (m.montoTotal || 0);
+                        }
                     }
                 }
             });
 
-            // UI Updates
             const [yyyy, mm, dd] = fechaSeleccionada.split('-');
             const labelFecha = document.getElementById('label-fecha-tabla');
             if(labelFecha) labelFecha.innerText = `${dd}/${mm}/${yyyy}`;
@@ -185,6 +233,10 @@
             
             const kpiDesc = document.getElementById('kpi-descarte-total');
             if(kpiDesc) kpiDesc.innerText = totalDesc.toFixed(0);
+
+            // KPI de ventas del día (monto total desde el POS)
+            const kpiVentas = document.getElementById('kpi-ventas-total');
+            if(kpiVentas) kpiVentas.innerText = totalVentas > 0 ? `$${totalVentas.toLocaleString('es-AR')}` : '$0';
             
             let porcentaje = 0;
             if(totalProd > 0) porcentaje = (totalDesc / totalProd) * 100;
@@ -203,22 +255,26 @@
                     const prod = produccionDia[p.id] || 0;
                     const desc = descarteDia[p.id] || 0;
                     const reut = reutilizacionDia[p.id] || 0;
-                    
-                    if (prod > 0 || desc > 0 || reut > 0) {
+                    const venta = ventasDia[p.id] || 0;
+                    if (prod > 0 || desc > 0 || reut > 0 || venta > 0) {
                         hayDatos = true;
-                        // Venta = Prod - (Reutilizacion + Descarte)
-                        const ventaEst = prod - reut - desc;
+                        // Venta estimada = producido − reutilizado − descartado − vendido real
+                        const ventaEst = prod - reut - desc - venta;
+                        const precioFmt = p.precio > 0 ? `<span class="text-[9px] text-gray-400">$${p.precio}</span>` : '';
                         tbody.innerHTML += `
                             <tr class="border-b border-gray-100 hover:bg-gray-50 text-xs sm:text-sm">
-                                <td class="py-2 pl-3 font-medium text-gray-800">${p.nombre}</td>
+                                <td class="py-2 pl-3 font-medium text-gray-800">
+                                    ${p.nombre} ${precioFmt}
+                                </td>
                                 <td class="py-2 text-center font-bold text-green-600 border-l">${prod > 0 ? prod.toFixed(1) : '-'}</td>
                                 <td class="py-2 text-center font-bold text-orange-500 border-l">${reut > 0 ? reut.toFixed(1) : '-'}</td>
                                 <td class="py-2 text-center font-bold text-red-600 border-l bg-red-50">${desc > 0 ? desc.toFixed(1) : '-'}</td>
+                                <td class="py-2 text-center font-bold text-purple-600 border-l">${venta > 0 ? venta.toFixed(1) : '-'}</td>
                                 <td class="py-2 text-center font-bold text-blue-700 border-l">${ventaEst.toFixed(1)} <span class="text-[10px] text-gray-400 font-normal">${p.unidad}</span></td>
                             </tr>`;
                     }
                 });
-                if (!hayDatos) tbody.innerHTML = '<tr><td colspan="5" class="text-center py-6 text-gray-400 italic text-xs">Sin movimientos en esta fecha</td></tr>';
+                if (!hayDatos) tbody.innerHTML = '<tr><td colspan="6" class="text-center py-6 text-gray-400 italic text-xs">Sin movimientos recientes</td></tr>';
             }
 
             const grid = document.getElementById('grid-stock');
@@ -227,11 +283,15 @@
                 productosGlobal.forEach(p => {
                     const actual = stockMap[p.id] || 0;
                     const borde = actual < 0 ? 'border-red-500' : (actual < 5 ? 'border-amber-400' : 'border-gray-200');
+                    const precioBadge = p.precio > 0 
+                        ? `<span class="text-[9px] text-amber-700 font-bold">$${p.precio.toLocaleString('es-AR')}</span>`
+                        : `<span class="text-[9px] text-red-400 italic">sin precio</span>`;
                     grid.innerHTML += `
                         <div class="bg-white p-2 rounded border-l-4 ${borde} shadow-sm flex justify-between items-center">
                             <div class="overflow-hidden pr-2">
                                 <h4 class="font-bold text-gray-700 text-xs truncate" title="${p.nombre}">${p.nombre}</h4>
                                 <span class="text-[9px] text-gray-400 uppercase tracking-wider">${CATEGORIAS_NOMBRES[p.categoria]}</span>
+                                <div>${precioBadge}</div>
                             </div>
                             <div class="text-right">
                                 <span class="block text-sm font-bold ${actual < 0 ? 'text-red-600' : 'text-gray-800'}">${actual.toFixed(1)}</span>
@@ -240,9 +300,8 @@
                         </div>`;
                 });
             }
-           actualizarGraficos(produccionDia, productosGlobal);
-}
-
+            actualizarGraficos(produccionDia, productosGlobal);
+        }
 
         let chartInstance = null;
         function actualizarGraficos(dataMap, productos) {
@@ -301,10 +360,18 @@
             let cantBaseCalculo = (tipo === 'ENTRADA') ? cantBase : -Math.abs(cantBase);
 
             db.collection(COLL_MOVIMIENTOS).add({
-                productoId: prodId, productoNombre: prod.nombre, tipo: tipo, 
-                cantidadOriginal: cantidad, formatoUsado: formatoTexto,
-                cantidadBase: cantBaseCalculo, operario: operario, fecha: fecha,
-                timestamp: new Date().toISOString()
+                productoId: prodId, 
+                productoNombre: prod.nombre, 
+                tipo: tipo, 
+                cantidadOriginal: cantidad, 
+                formatoUsado: formatoTexto,
+                cantidadBase: cantBaseCalculo, 
+                operario: operario, 
+                fecha: fecha,
+                timestamp: new Date().toISOString(),
+                // PASO 1 ► Guardamos precio y monto en el movimiento para reportes
+                precioUnitario: prod.precio || 0,
+                montoTotal: tipo === 'ENTRADA' ? 0 : Math.abs(cantBase) * (prod.precio || 0)
             }).then(() => {
                 mostrarToast("Movimiento registrado");
                 e.target.reset();
@@ -336,7 +403,10 @@
 
             filtrados.forEach(p => {
                 const opt = document.createElement('option');
-                opt.value = p.id; opt.text = p.nombre; sel.appendChild(opt);
+                opt.value = p.id; 
+                // Mostramos el precio en el selector para verificar que se cargó
+                opt.text = p.precio > 0 ? `${p.nombre} ($${p.precio.toLocaleString('es-AR')})` : `${p.nombre} ⚠ sin precio`;
+                sel.appendChild(opt);
             });
             actualizarFormato();
         }
@@ -360,19 +430,31 @@
                 s.add(new Option("Unidad", "manual_unidad"));
                 s.add(new Option("Docena", "manual_docena"));
                 s.add(new Option("Kilogramo (Kg)", "manual_kg"));
-                
                 const isStandard = ['Docena', 'Kg', 'Unidad'].includes(p.alterno); 
                 if(p.alterno && p.alterno !== '-' && !isStandard) {
                     s.add(new Option(`${p.alterno} (x${p.factor} ${p.unidad})`, "alterno"));
                 }
-                
                 if (p.unidad.includes('Unidad')) s.value = "manual_unidad";
                 else if (p.unidad.includes('Kg')) s.value = "manual_kg";
                 else if (p.unidad.includes('Docena')) s.value = "manual_docena";
+
+                // Mostrar vista previa del precio seleccionado
+                const prevPrecio = document.getElementById('preview-precio');
+                if(prevPrecio) {
+                    if(p.precio > 0) {
+                        prevPrecio.innerHTML = `<span class="text-green-700 font-bold">$${p.precio.toLocaleString('es-AR')}</span> por ${p.unidad}`;
+                        prevPrecio.classList.remove('hidden');
+                    } else {
+                        prevPrecio.innerHTML = `<span class="text-red-500">⚠ Sin precio cargado — editá en Config</span>`;
+                        prevPrecio.classList.remove('hidden');
+                    }
+                }
+            } else {
+                const prevPrecio = document.getElementById('preview-precio');
+                if(prevPrecio) prevPrecio.classList.add('hidden');
             }
         }
 
-        // --- HISTORIAL ---
         window.toggleModoHistorial = function() {
             modoHistorial = modoHistorial === 'cronologico' ? 'agrupado' : 'cronologico';
             const btn = document.getElementById('btn-toggle-historial');
@@ -391,47 +473,49 @@
             const div = document.getElementById('contenedor-historial');
             if (!div) return;
             div.innerHTML = '';
-
             if (movimientosGlobal.length === 0) {
-                div.innerHTML = '<p class="text-gray-400 text-center py-4">Sin movimientos</p>';
+                div.innerHTML = '<p class="text-gray-400 text-center py-4">Sin movimientos recientes</p>';
                 return;
             }
 
             if (modoHistorial === 'cronologico') {
                 const gruposDia = {};
                 movimientosGlobal.forEach(m => {
-                    const dia = m.fecha.slice(0,10);
+                    const dia = m.fecha ? m.fecha.slice(0,10) : m.timestamp.slice(0,10);
                     if(!gruposDia[dia]) gruposDia[dia] = [];
                     gruposDia[dia].push(m);
                 });
                 const diasOrdenados = Object.keys(gruposDia).sort().reverse();
-
                 diasOrdenados.forEach(dia => {
                     const [yyyy, mm, dd] = dia.split('-');
                     let html = `<div class="mb-4"><h4 class="bg-gray-200 px-3 py-1 text-xs font-bold text-gray-600 rounded mb-2 sticky top-0">${dd}/${mm}/${yyyy}</h4><div class="bg-white border rounded shadow-sm divide-y">`;
-                    
                     gruposDia[dia].forEach(m => {
-                        const hora = m.fecha.slice(11,16);
+                        const hora = m.fecha ? m.fecha.slice(11,16) : m.timestamp.slice(11,16);
                         let color = 'text-gray-600', etiqueta = '';
                         if(m.tipo === 'ENTRADA') { color = 'text-green-600'; etiqueta="PROD"; }
                         else if(m.tipo === 'DESCARTE' || m.tipo === 'SOBRANTE') { color = 'text-red-600'; etiqueta="DESC"; }
                         else if(m.tipo === 'REUTILIZACION') { color = 'text-orange-500'; etiqueta="REUT"; }
-                        else { color = 'text-blue-600'; etiqueta="VENTA"; }
-
+                        else if(m.tipo === 'VENTA') { color = 'text-purple-600'; etiqueta="VENTA"; }
+                        else { color = 'text-blue-600'; etiqueta="MOV"; }
+                        
+                        // Mostrar monto si es una venta
+                        const montoTag = m.tipo === 'VENTA' && m.montoTotal > 0
+                            ? `<span class="text-[10px] text-purple-700 font-bold ml-1">$${m.montoTotal.toLocaleString('es-AR')}</span>`
+                            : '';
                         const btnDel = isAdminUnlocked ? `<button onclick="eliminarMovimiento('${m.id}')" class="text-red-400 hover:text-red-600 ml-2"><i class="fas fa-trash-alt"></i></button>` : '';
-
                         html += `
                             <div class="p-2 flex justify-between items-center hover:bg-gray-50">
                                 <div class="flex items-center gap-3 overflow-hidden">
                                     <span class="text-xs text-gray-400 font-mono">${hora}</span>
                                     <div>
                                         <div class="font-bold text-sm text-gray-700 truncate w-40 sm:w-64">${m.productoNombre}</div>
-                                        <div class="text-[10px] text-gray-400">${m.operario}</div>
+                                        <div class="text-[10px] text-gray-400">${m.operario || 'POS'}</div>
                                     </div>
                                 </div>
                                 <div class="flex items-center gap-2">
                                     <span class="text-[10px] font-bold bg-gray-100 px-1 rounded text-gray-500">${etiqueta}</span>
                                     <span class="font-bold ${color} text-sm w-16 text-right">${m.tipo === 'ENTRADA' ? '+' : '-'}${Math.abs(m.cantidadOriginal)}</span>
+                                    ${montoTag}
                                     ${btnDel}
                                 </div>
                             </div>`;
@@ -440,13 +524,11 @@
                     div.innerHTML += html;
                 });
             } else {
-                // Modo Agrupado (Lista de Productos)
                 const gruposProd = {};
                 movimientosGlobal.forEach(m => {
                     if (!gruposProd[m.productoId]) gruposProd[m.productoId] = [];
                     gruposProd[m.productoId].push(m);
                 });
-
                 productosGlobal.forEach(prod => {
                     if (gruposProd[prod.id] && gruposProd[prod.id].length > 0) {
                         const movs = gruposProd[prod.id];
@@ -456,12 +538,13 @@
                              if(m.tipo === 'ENTRADA') color = 'text-green-600';
                              else if(m.tipo === 'DESCARTE' || m.tipo === 'SOBRANTE') color = 'text-red-600';
                              else if(m.tipo === 'REUTILIZACION') color = 'text-orange-500';
-                             
-                             const fechaFmt = `${m.fecha.slice(8,10)}/${m.fecha.slice(5,7)} ${m.fecha.slice(11,16)}`;
+                             else if(m.tipo === 'VENTA') color = 'text-purple-600';
+                             const fechaFmt = m.fecha 
+                                 ? `${m.fecha.slice(8,10)}/${m.fecha.slice(5,7)} ${m.fecha.slice(11,16)}`
+                                 : m.timestamp.slice(8,10) + '/' + m.timestamp.slice(5,7);
                              const btnDel = isAdminUnlocked ? `<button onclick="eliminarMovimiento('${m.id}')" class="text-red-400 hover:text-red-600 ml-2"><i class="fas fa-trash-alt"></i></button>` : '';
-                             
                              itemsHtml += `<div class="flex justify-between text-xs border-b border-gray-100 py-1 px-2">
-                                <span class="text-gray-500">${fechaFmt} - ${m.operario}</span>
+                                <span class="text-gray-500">${fechaFmt} - ${m.operario || 'POS'}</span>
                                 <span class="font-bold ${color}">${m.tipo === 'ENTRADA' ? '+' : '-'}${Math.abs(m.cantidadOriginal)} ${m.formatoUsado}${btnDel}</span>
                              </div>`;
                         });
@@ -478,74 +561,76 @@
             }
         }
 
-        // --- ADMIN ---
         function verificarAdmin() {
             if (isAdminUnlocked) return true;
             if (prompt("Contraseña Administrador:") === CLAVE_ADMIN) {
                 isAdminUnlocked = true;
-                actualizarHistorialVisual(); // Forzar actualización para mostrar tachos
+                actualizarHistorialVisual();
                 return true;
             }
             return false;
         }
 
         window.cambiarVista = function(id) {
-            // Verificar admin al entrar a config
             if (id === 'vista-config' && !verificarAdmin()) return;
-            
             const btnConf = document.getElementById('btn-vista-config');
             if(isAdminUnlocked && btnConf) {
                  btnConf.innerHTML = '<i class="fas fa-unlock block mb-1 text-lg"></i>Admin';
                  btnConf.classList.add('text-green-200');
             }
-
             document.querySelectorAll('.vista').forEach(d => d.classList.add('hidden'));
             document.getElementById(id).classList.remove('hidden');
-            
             document.querySelectorAll('.nav-btn').forEach(b => {
                 b.classList.remove('border-amber-300', 'text-white');
                 b.classList.add('border-transparent', 'text-amber-100');
             });
             document.getElementById('btn-' + id).classList.add('border-amber-300', 'text-white');
-            
             if(id === 'vista-panel') actualizarPanelPrincipal(); 
             if(id === 'vista-carga') filtrarProductos('panaderia'); 
             if(id === 'vista-historial') actualizarHistorialVisual(); 
         }
         
-        // =========================================================================
-        // ⭐ FUNCIÓN ACTUALIZADA: GUARDA Y CREA EL ENLACE PARA PYTHON ⭐
-        // =========================================================================
+        // PASO 1 ► guardarConfiguracion ahora siempre escribe json_data con precio
         window.guardarConfiguracion = async function() {
             if (!verificarAdmin()) return;
-            
-            const btn = document.querySelector('#vista-config button'); // El botón de guardar
+            const btn = document.querySelector('#vista-config button.btn-guardar');
             const textoOriginal = btn.innerText;
             btn.innerText = "GUARDANDO Y SINCRONIZANDO...";
             btn.disabled = true;
 
+            // Validar que todos los productos tengan precio antes de guardar
+            let advertencias = [];
+            
             try {
                 for (const key of ORDEN_CATEGORIAS) {
                     const val = document.getElementById(`config-${key}`).value;
-                    
-                    // AQUI OCURRE LA MAGIA: Convertimos el texto a Objetos para Python
                     const listaLimpia = procesarProductosCSV(val, key);
+                    
+                    // Detectar productos sin precio y avisar
+                    listaLimpia.forEach(p => {
+                        if (!p.precio || p.precio === 0) {
+                            advertencias.push(`${CATEGORIAS_NOMBRES[key]}: "${p.nombre}" no tiene precio`);
+                        }
+                    });
 
                     await db.collection(COLL_CONFIG).doc(`productos_${key}`).set({ 
                         csv: val,
-                        json_data: listaLimpia, // <--- ESTO ES LO QUE BUSCA PYTHON
-                        ultima_actualizacion: new Date().toISOString()
+                        json_data: listaLimpia,           // ← el POS Python lee ESTO
+                        ultima_actualizacion: new Date().toISOString(),
+                        version_formato: 2                // ← marca que incluye precio
                     });
                 }
-                
                 const ops = document.getElementById('config-operarios').value;
                 await db.collection(COLL_CONFIG).doc("operarios_lista").set({ lista: ops });
-                
                 await cargarConfiguracionGeneral();
-                alert("✅ Guardado y Sincronizado correctamente con el Punto de Venta.");
-            } catch(e) { 
-                alert("Error: " + e.message); 
-            } finally {
+                
+                if (advertencias.length > 0) {
+                    alert(`✅ Guardado correctamente.\n\n⚠️ Productos sin precio (el POS no podrá facturarlos):\n${advertencias.join('\n')}`);
+                } else {
+                    alert("✅ Guardado y Sincronizado correctamente.\nEl POS Python ya puede leer los precios.");
+                }
+            } catch(e) { alert("Error: " + e.message); } 
+            finally {
                 btn.innerText = textoOriginal;
                 btn.disabled = false;
             }
@@ -564,7 +649,6 @@
             } catch (e) { alert(e.message); }
         }
 
-        // --- INICIO ---
         document.addEventListener('DOMContentLoaded', () => {
             auth.signInAnonymously().catch(e => console.error(e));
             auth.onAuthStateChanged(user => {
@@ -582,18 +666,6 @@
     </script>
 </head>
 <body class="bg-gray-100 h-screen flex flex-col overflow-hidden text-gray-800 font-sans">
-    <div style="
-    background:#b91c1c;
-    color:white;
-    text-align:center;
-    font-size:18px;
-    font-weight:bold;
-    padding:10px;
-    z-index:9999;
-">
-⚠️ ENTORNO DE PRUEBA – NO AFECTA PRODUCCIÓN
-</div>
-
 
     <header class="bg-amber-800 text-white shadow-md flex-none z-20">
         <div class="container mx-auto px-4 py-3 flex justify-between items-center">
@@ -603,7 +675,7 @@
                 </div>
                 <div>
                     <h1 class="font-bold text-lg leading-tight tracking-tight">Control Producción</h1>
-                    <p class="text-[10px] text-amber-200 uppercase tracking-widest">Gestión Stock</p>
+                    <p class="text-[10px] text-amber-200 uppercase tracking-widest">Gestión Stock · v2</p>
                 </div>
             </div>
             <i id="status-icon" class="fas fa-circle text-red-500 text-xs"></i>
@@ -621,134 +693,205 @@
 
     <main class="flex-1 overflow-y-auto bg-gray-50 p-2 sm:p-4 pb-20">
 
+        <!-- ==================== PANEL / RESUMEN ==================== -->
         <div id="vista-panel" class="vista container mx-auto max-w-5xl space-y-4">
             <div class="bg-white p-3 rounded-lg shadow-sm border border-gray-200 flex justify-between items-center">
                 <div class="flex items-center gap-2">
-                    <span class="text-xs font-bold text-gray-500 uppercase"><i class="far fa-calendar-alt mr-1"></i>Día:</span>
-                    <input type="date" id="filtro-fecha-panel" onchange="actualizarPanelPrincipal()" class="border rounded px-2 py-1 text-sm font-bold text-gray-700 bg-gray-50 outline-none">
+                    <i class="fas fa-calendar-alt text-amber-600"></i>
+                    <input type="date" id="filtro-fecha-panel" onchange="actualizarPanelPrincipal()" class="border-none font-bold text-gray-700 focus:ring-0 cursor-pointer">
                 </div>
-                <button onclick="actualizarPanelPrincipal()" class="text-amber-600 p-2"><i class="fas fa-sync-alt"></i></button>
-            </div>
-
-            <div class="grid grid-cols-3 gap-2">
-                <div class="bg-white p-3 rounded shadow-sm border-l-4 border-green-500">
-                    <p class="text-[10px] text-gray-400 uppercase font-bold">Producción</p>
-                    <p class="text-xl font-bold text-gray-800" id="kpi-prod-total">0</p>
-                </div>
-                <div class="bg-white p-3 rounded shadow-sm border-l-4 border-red-500">
-                    <p class="text-[10px] text-gray-400 uppercase font-bold">Descarte</p>
-                    <p class="text-xl font-bold text-red-600" id="kpi-descarte-total">0</p>
-                </div>
-                <div class="bg-white p-3 rounded shadow-sm border-l-4 border-gray-500">
-                    <p class="text-[10px] text-gray-400 uppercase font-bold">% Pérdida</p>
-                    <p class="text-xl font-bold text-gray-800" id="kpi-porcentaje-merma">0%</p>
+                <div class="text-right">
+                    <span class="text-[10px] text-gray-400 block uppercase">Actualizado</span>
+                    <span class="text-xs font-mono text-gray-500" id="last-update">En línea</span>
                 </div>
             </div>
 
-            <div class="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
-                <div class="bg-gray-50 px-4 py-2 border-b flex justify-between items-center">
-                    <h2 class="font-bold text-gray-700 text-sm">Detalle: <span id="label-fecha-tabla" class="text-amber-600">Hoy</span></h2>
-                    <div class="flex gap-2 text-[9px] sm:text-[10px] font-bold uppercase">
-                        <span class="text-green-600">Prod</span> | <span class="text-orange-500">Reut</span> | <span class="text-red-600">Desc</span>
+            <!-- KPIs: ahora son 4 (agregamos Ventas del día) -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
+                <div class="bg-white p-3 rounded-xl border border-gray-100 shadow-sm text-center">
+                    <span class="text-[9px] sm:text-xs text-gray-400 block uppercase font-bold">Producción</span>
+                    <span id="kpi-prod-total" class="text-xl font-bold text-green-600">0</span>
+                </div>
+                <div class="bg-white p-3 rounded-xl border border-gray-100 shadow-sm text-center">
+                    <span class="text-[9px] sm:text-xs text-gray-400 block uppercase font-bold">Descarte</span>
+                    <span id="kpi-descarte-total" class="text-xl font-bold text-red-500">0</span>
+                </div>
+                <div class="bg-white p-3 rounded-xl border border-gray-100 shadow-sm text-center">
+                    <span class="text-[9px] sm:text-xs text-gray-400 block uppercase font-bold">% Merma</span>
+                    <span id="kpi-porcentaje-merma" class="text-xl font-bold text-gray-800">0%</span>
+                </div>
+                <!-- NUEVO KPI de ventas del POS -->
+                <div class="bg-white p-3 rounded-xl border border-purple-100 shadow-sm text-center">
+                    <span class="text-[9px] sm:text-xs text-purple-400 block uppercase font-bold">Ventas POS</span>
+                    <span id="kpi-ventas-total" class="text-xl font-bold text-purple-600">$0</span>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                    <div class="bg-gray-50 px-4 py-2 border-b border-gray-100 flex justify-between items-center">
+                        <h3 class="font-bold text-gray-700 text-sm">Detalle de Producción <span id="label-fecha-tabla" class="text-amber-700"></span></h3>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left">
+                            <thead class="bg-gray-50 text-[10px] uppercase text-gray-400">
+                                <tr>
+                                    <th class="py-2 pl-3">Producto</th>
+                                    <th class="py-2 text-center">Prod</th>
+                                    <th class="py-2 text-center">Reut</th>
+                                    <th class="py-2 text-center">Desc</th>
+                                    <th class="py-2 text-center text-purple-500">Venta</th>
+                                    <th class="py-2 text-center">Stock Est.</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tabla-produccion-hoy" class="divide-y divide-gray-50"></tbody>
+                        </table>
                     </div>
                 </div>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-sm">
-                        <thead class="bg-gray-100 text-[10px] text-gray-500 uppercase border-b">
-                            <tr>
-                                <th class="text-left py-2 pl-4">Producto</th>
-                                <th class="text-center py-2 w-12 text-green-700">Prod</th>
-                                <th class="text-center py-2 w-12 text-orange-600">Reut</th>
-                                <th class="text-center py-2 w-12 text-red-600 bg-red-50">Desc</th>
-                                <th class="text-center py-2 w-16 text-blue-700">Vta.Est</th>
-                            </tr>
-                        </thead>
-                        <tbody id="tabla-produccion-hoy" class="divide-y divide-gray-100"></tbody>
-                    </table>
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center">
+                    <h3 class="font-bold text-gray-700 text-sm mb-4 w-full">Distribución por Producto</h3>
+                    <div class="relative h-48 w-full">
+                        <canvas id="graficoProduccion"></canvas>
+                    </div>
                 </div>
             </div>
-            
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                    <h3 class="font-bold text-gray-700 text-xs mb-2 uppercase">Stock Físico Actual</h3>
-                    <div id="grid-stock" class="grid grid-cols-2 gap-2 max-h-60 overflow-y-auto pr-1 pb-2"></div>
-                </div>
-                <div class="bg-white p-2 rounded shadow h-60 border">
-                    <h3 class="font-bold text-gray-700 text-xs mb-1 text-center">Distribución Producción</h3>
-                    <div class="h-48 relative"><canvas id="graficoProduccion"></canvas></div>
-                </div>
+
+            <div>
+                <h3 class="font-bold text-gray-500 text-xs uppercase mb-3 flex items-center gap-2">
+                    <i class="fas fa-boxes"></i> Stock Actual Calculado
+                </h3>
+                <div id="grid-stock" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2"></div>
             </div>
         </div>
 
-        <div id="vista-carga" class="vista hidden container mx-auto max-w-md">
-            <div class="bg-white p-4 rounded-lg shadow-lg border-t-4 border-amber-500 space-y-4">
-                <h2 class="text-lg font-bold text-gray-800 text-center border-b pb-2">Nuevo Movimiento</h2>
-                <div class="flex justify-between bg-gray-100 p-1 rounded-lg gap-1">
-                    <button id="btn-cat-panaderia" onclick="filtrarProductos('panaderia')" class="cat-btn flex-1 py-2 text-[10px] uppercase font-bold rounded hover:bg-amber-100">Panadería</button>
-                    <button id="btn-cat-pasteleria" onclick="filtrarProductos('pasteleria')" class="cat-btn flex-1 py-2 text-[10px] uppercase font-bold rounded hover:bg-amber-100">Pastelería</button>
-                    <button id="btn-cat-cocina" onclick="filtrarProductos('cocina')" class="cat-btn flex-1 py-2 text-[10px] uppercase font-bold rounded hover:bg-amber-100">Cocina</button>
+        <!-- ==================== CARGA ==================== -->
+        <div id="vista-carga" class="vista hidden container mx-auto max-w-2xl">
+            <div class="bg-white rounded-2xl shadow-xl overflow-hidden">
+                <div class="bg-amber-800 p-4 text-white">
+                    <h2 class="text-lg font-bold flex items-center gap-2"><i class="fas fa-plus-circle"></i> Nueva Entrada de Mercadería</h2>
                 </div>
-                <form onsubmit="guardarMovimiento(event)" class="space-y-3">
-                    <div>
-                        <label class="block text-[10px] font-bold text-gray-400 uppercase">Producto</label>
-                        <select id="producto" onchange="actualizarFormato()" required class="input-field w-full bg-gray-50 border p-2 rounded"></select>
-                    </div>
-                    <div class="flex gap-2">
-                        <div class="w-1/2">
-                            <label class="block text-[10px] font-bold text-gray-400 uppercase">Acción</label>
-                            <select id="tipo" onchange="actualizarFormato()" class="input-field w-full p-2 rounded border font-bold">
-                                <option value="ENTRADA">🟢 PRODUCCIÓN (+)</option>
-                                <option value="DESCARTE">🔴 DESCARTE (-)</option>
-                                <option value="REUTILIZACION">🟠 REUTILIZACIÓN (-)</option>
-                                <option value="SALIDA">🔵 VENTA / SALIDA (-)</option>
+                
+                <div class="p-4 grid grid-cols-3 gap-2">
+                    <button id="btn-cat-panaderia" onclick="filtrarProductos('panaderia')" class="cat-btn py-2 rounded-lg text-xs font-bold border transition">PANADERIA</button>
+                    <button id="btn-cat-pasteleria" onclick="filtrarProductos('pasteleria')" class="cat-btn py-2 rounded-lg text-xs font-bold border transition">PASTELERIA</button>
+                    <button id="btn-cat-cocina" onclick="filtrarProductos('cocina')" class="cat-btn py-2 rounded-lg text-xs font-bold border transition">COCINA</button>
+                </div>
+
+                <form onsubmit="guardarMovimiento(event)" class="p-4 space-y-4">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Producto</label>
+                            <select id="producto" onchange="actualizarFormato()" required class="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-amber-500 outline-none text-sm"></select>
+                            <!-- Vista previa del precio del producto seleccionado -->
+                            <div id="preview-precio" class="hidden mt-1 text-xs px-1"></div>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Tipo de Movimiento</label>
+                            <select id="tipo" onchange="actualizarFormato()" class="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-amber-500 outline-none text-sm">
+                                <option value="ENTRADA">PRODUCCIÓN (+)</option>
+                                <option value="REUTILIZACION">REUTILIZACIÓN (-)</option>
+                                <option value="DESCARTE">DESCARTE / MERMA (-)</option>
+                                <option value="SOBRANTE">SOBRANTE (-)</option>
                             </select>
                         </div>
-                        <div class="w-1/2">
-                            <label class="block text-[10px] font-bold text-gray-400 uppercase">Formato</label>
-                            <select id="formato" class="input-field w-full bg-amber-50 text-amber-900 p-2 rounded border"></select>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Formato</label>
+                            <select id="formato" class="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-amber-500 outline-none text-sm"></select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Cantidad</label>
+                            <input type="number" id="cantidad" step="0.1" required class="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-amber-500 outline-none text-sm" placeholder="0.0">
                         </div>
                     </div>
-                    <div>
-                        <label class="block text-[10px] font-bold text-gray-400 uppercase">Cantidad</label>
-                        <input type="number" id="cantidad" step="0.001" required class="w-full text-center text-3xl font-bold text-amber-600 border rounded py-2 outline-none" placeholder="0">
-                    </div>
-                    <div class="flex gap-2">
-                        <div class="w-1/2">
-                            <label class="block text-[10px] font-bold text-gray-400 uppercase">Operario</label>
-                            <select id="operario" class="w-full border p-2 rounded bg-gray-50 text-sm"></select>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Operario / Turno</label>
+                            <select id="operario" required class="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-amber-500 outline-none text-sm"></select>
                         </div>
-                        <div class="w-1/2">
-                            <label class="block text-[10px] font-bold text-gray-400 uppercase">Fecha Real</label>
-                            <input type="datetime-local" id="fecha" required class="w-full border p-2 rounded bg-gray-50 text-xs">
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Fecha y Hora</label>
+                            <input type="datetime-local" id="fecha" required class="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-amber-500 outline-none text-sm">
                         </div>
                     </div>
-                    <button type="submit" class="w-full bg-amber-600 text-white py-3 rounded-lg font-bold shadow hover:bg-amber-700 transition active:scale-95">CONFIRMAR CARGA</button>
+
+                    <button type="submit" class="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-4 rounded-xl shadow-lg transition transform active:scale-95 uppercase tracking-wider mt-4">Confirmar Carga</button>
                 </form>
             </div>
         </div>
 
-        <div id="vista-historial" class="vista hidden container mx-auto max-w-xl">
-            <div class="flex justify-between items-center mb-3">
-                <h3 class="font-bold text-gray-700 text-sm">Historial</h3>
-                <button id="btn-toggle-historial" onclick="toggleModoHistorial()" class="bg-white border text-gray-600 px-3 py-1 rounded text-xs font-bold shadow-sm hover:bg-gray-50"><i class="fas fa-layer-group mr-1"></i> Agrupar</button>
+        <!-- ==================== HISTORIAL ==================== -->
+        <div id="vista-historial" class="vista hidden container mx-auto max-w-3xl">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-bold text-gray-700 uppercase tracking-tight">Registro de Movimientos</h2>
+                <button id="btn-toggle-historial" onclick="toggleModoHistorial()" class="bg-white px-3 py-1 rounded-full text-xs font-bold border text-amber-700 shadow-sm"><i class="fas fa-layer-group mr-1"></i> Agrupar</button>
             </div>
-            <div id="contenedor-historial"></div>
+            <div id="contenedor-historial" class="space-y-2"></div>
         </div>
 
-        <div id="vista-config" class="vista hidden container mx-auto max-w-lg space-y-4">
-            <div class="bg-blue-50 text-blue-800 p-2 rounded text-center text-xs font-bold border border-blue-200"><i class="fas fa-cog"></i> Configuración</div>
-            <div class="space-y-1">
-                <label class="text-[10px] font-bold text-gray-500 uppercase">Operarios</label>
-                <textarea id="config-operarios" class="w-full border p-2 text-xs rounded h-16"></textarea>
+        <!-- ==================== CONFIG / ADMIN ==================== -->
+        <div id="vista-config" class="vista hidden container mx-auto max-w-4xl space-y-6">
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
+                <h2 class="text-xl font-bold mb-1 flex items-center gap-2"><i class="fas fa-tools text-amber-600"></i> Panel de Administración</h2>
+                <!-- Instrucción del formato actualizado -->
+                <div class="mb-4 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 text-xs text-blue-800">
+                    <strong>Formato CSV (v2):</strong> Nombre | Unidad | Alterno | Factor | StockInicial | 
+                    <strong class="text-blue-900">Precio</strong>
+                    <br>Ejemplo: <code>Media Luna Dulce | Unidad | Docena | 12 | 0 | 350</code>
+                    <br><span class="text-blue-600">El campo Precio es leído por el POS Python para facturar. Productos sin precio mostrarán ⚠.</span>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <h3 class="font-bold text-xs uppercase text-gray-400 mb-2">Productos por categoría</h3>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="text-[10px] font-bold text-amber-700">PANADERÍA</label>
+                                <textarea id="config-panaderia" rows="5" class="w-full p-2 bg-gray-50 border rounded font-mono text-xs"></textarea>
+                            </div>
+                            <div>
+                                <label class="text-[10px] font-bold text-amber-700">PASTELERÍA</label>
+                                <textarea id="config-pasteleria" rows="3" class="w-full p-2 bg-gray-50 border rounded font-mono text-xs"></textarea>
+                            </div>
+                            <div>
+                                <label class="text-[10px] font-bold text-amber-700">COCINA</label>
+                                <textarea id="config-cocina" rows="3" class="w-full p-2 bg-gray-50 border rounded font-mono text-xs"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="space-y-6">
+                        <div>
+                            <h3 class="font-bold text-xs uppercase text-gray-400 mb-2">Operarios (uno por línea)</h3>
+                            <textarea id="config-operarios" rows="4" class="w-full p-2 bg-gray-50 border rounded font-mono text-xs"></textarea>
+                        </div>
+                        <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-800">
+                            <strong>¿Cómo agrego el precio?</strong><br>
+                            Agregá el precio al final de cada línea separado por <code>|</code>.<br>
+                            Es el precio de venta por unidad base del producto.
+                        </div>
+                        <div class="bg-red-50 p-4 rounded-xl border border-red-100">
+                            <h3 class="text-red-700 font-bold text-sm mb-2">Zona de Peligro</h3>
+                            <button onclick="limpiarBaseDeDatos()" class="w-full bg-white border border-red-200 text-red-600 py-2 rounded text-xs font-bold hover:bg-red-600 hover:text-white transition">REINICIAR TODA LA BASE DE DATOS</button>
+                        </div>
+                    </div>
+                </div>
+                <button onclick="guardarConfiguracion()" class="btn-guardar w-full bg-green-600 text-white font-bold py-4 rounded-xl mt-6 shadow-md hover:bg-green-700 transition">GUARDAR CAMBIOS Y SINCRONIZAR</button>
             </div>
-            <div class="space-y-2">
-                <p class="text-xs font-bold text-gray-700 border-b pb-1">Productos (Orden Fijo)</p>
-                <div><label class="text-[10px] font-bold text-amber-600">PANADERÍA</label><textarea id="config-panaderia" class="w-full border p-2 text-[10px] font-mono rounded h-24 bg-gray-50"></textarea></div>
-                <div><label class="text-[10px] font-bold text-pink-600">PASTELERÍA</label><textarea id="config-pasteleria" class="w-full border p-2 text-[10px] font-mono rounded h-24 bg-gray-50"></textarea></div>
-                <div><label class="text-[10px] font-bold text-green-600">COCINA</label><textarea id="config-cocina" class="w-full border p-2 text-[10px] font-mono rounded h-24 bg-gray-50"></textarea></div>
-            </div>
-            <button onclick="guardarConfiguracion()" class="w-full bg-blue-600 text-white py-3 rounded font-bold text-sm shadow">GUARDAR CAMBIOS</button>
         </div>
     </main>
+
+    <nav class="fixed bottom-0 w-full bg-white border-t border-gray-200 flex justify-around py-2 sm:hidden z-30 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
+        <button onclick="cambiarVista('vista-panel')" class="flex flex-col items-center gap-1 text-gray-400 focus:text-amber-700">
+            <i class="fas fa-chart-bar text-xl"></i><span class="text-[10px] font-bold">Resumen</span>
+        </button>
+        <button onclick="cambiarVista('vista-carga')" class="flex flex-col items-center gap-1 text-gray-400 focus:text-amber-700">
+            <i class="fas fa-plus-circle text-xl"></i><span class="text-[10px] font-bold">Cargar</span>
+        </button>
+        <button onclick="cambiarVista('vista-historial')" class="flex flex-col items-center gap-1 text-gray-400 focus:text-amber-700">
+            <i class="fas fa-history text-xl"></i><span class="text-[10px] font-bold">Historial</span>
+        </button>
+    </nav>
 </body>
 </html>
