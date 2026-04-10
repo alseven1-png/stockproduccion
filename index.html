@@ -14,9 +14,6 @@
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 
     <script>
-        // ============================================================
-        // 1. CONFIGURACIÓN (TUS CLAVES ORIGINALES - NO TOCADAS)
-        // ============================================================
         const CLAVE_ADMIN = "2550LP"; 
         
         const firebaseConfig = {
@@ -32,7 +29,6 @@
         const db = firebase.firestore();
         const auth = firebase.auth();
         
-        // VARIABLES GLOBALES
         let currentUser = null;
         let productosGlobal = []; 
         let operariosGlobal = [];
@@ -45,7 +41,6 @@
         const ORDEN_CATEGORIAS = ['panaderia', 'pasteleria', 'cocina'];
         const CATEGORIAS_NOMBRES = { panaderia: 'Panadería', pasteleria: 'Pastelería', cocina: 'Cocina' };
         
-        // --- UTILIDADES ---
         function obtenerFechaLocal() {
             const now = new Date();
             now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
@@ -65,7 +60,6 @@
             if(filtroPanel && !filtroPanel.value) filtroPanel.value = obtenerFechaHoyYMD();
         }
 
-        // --- CSV Y PRODUCTOS ---
         function getProductDefault(key) {
              if (key === 'panaderia') return `Media Luna Dulce | Unidad | Docena | 12 | 0\nMedia Luna Salada | Unidad | Docena | 12 | 0\nFactura Rellena | Unidad | Docena | 12 | 0\nPan Francés | Kg | Unidad | 0.5 | 0\nPan Rallado | Kg | - | 1 | 0\nLibritos | Kg | Docena | 0.3 | 0`;
              if (key === 'pasteleria') return `Tarta Frutal | Unidad | Porción | 6 | 0\nAlfajor de Maicena | Unidad | Bandeja | 10 | 0`;
@@ -97,17 +91,14 @@
                     let csv = getProductDefault(key);
                     if (docSnap.exists) csv = docSnap.data().csv;
                     else await docRef.set({ csv: csv });
-                    
                     const configEl = document.getElementById(`config-${key}`);
                     if(configEl) configEl.value = csv;
                     productosGlobal.push(...procesarProductosCSV(csv, key));
                 }
-
                 const docOp = await db.collection(COLL_CONFIG).doc("operarios_lista").get();
                 let txtOp = "Mañana\nTarde\nNoche";
                 if (docOp.exists) txtOp = docOp.data().lista;
                 else await db.collection(COLL_CONFIG).doc("operarios_lista").set({ lista: txtOp });
-
                 const opEl = document.getElementById('config-operarios');
                 if(opEl) opEl.value = txtOp; 
                 operariosGlobal = txtOp.split('\n').map(s => s.trim()).filter(s => s.length > 0);
@@ -127,12 +118,9 @@
             if(actual) sel.value = actual;
         }
 
-        // ============================================================
-        // MEJORA DE VELOCIDAD: Solo cargamos las últimas 24 horas
-        // ============================================================
         function escucharMovimientos() {
             const limiteCarga = new Date();
-            limiteCarga.setHours(limiteCarga.getHours() - 24); // Solo datos de ayer y hoy
+            limiteCarga.setHours(limiteCarga.getHours() - 24);
 
             db.collection(COLL_MOVIMIENTOS)
               .where("timestamp", ">=", limiteCarga.toISOString())
@@ -144,7 +132,6 @@
                 actualizarHistorialVisual(); 
             }, (error) => {
                 console.error("Error en Firebase:", error);
-                // Si falla por falta de índice, cargamos normal (compatible)
                 db.collection(COLL_MOVIMIENTOS).orderBy("timestamp", "desc").limit(100).onSnapshot((snap) => {
                     movimientosGlobal = [];
                     snap.forEach((doc) => movimientosGlobal.push({ id: doc.id, ...doc.data() }));
@@ -164,26 +151,33 @@
             const produccionDia = {};
             const descarteDia = {};
             const reutilizacionDia = {};
+            const ventaDia = {};   // ← NUEVO: acumular ventas del POS
             
-            let totalProd = 0, totalDesc = 0;
+            let totalProd = 0, totalDesc = 0, totalVenta = 0;
 
             [...movimientosGlobal].reverse().forEach(m => {
                 if (stockMap[m.productoId] !== undefined) {
-                    if(m.tipo === 'ENTRADA') stockMap[m.productoId] += Math.abs(m.cantidadBase);
-                    else stockMap[m.productoId] -= Math.abs(m.cantidadBase);
+                    if(m.tipo === 'ENTRADA') {
+                        stockMap[m.productoId] += Math.abs(m.cantidadBase);
+                    } else {
+                        // DESCARTE, SOBRANTE, REUTILIZACION, VENTA → todos restan stock
+                        stockMap[m.productoId] -= Math.abs(m.cantidadBase);
+                    }
 
                     if (m.fecha.startsWith(fechaSeleccionada)) {
                         const cant = Math.abs(m.cantidadBase);
                         if (m.tipo === 'ENTRADA') { 
                             produccionDia[m.productoId] = (produccionDia[m.productoId] || 0) + cant;
                             totalProd += cant;
-                        } 
-                        else if (m.tipo === 'DESCARTE' || m.tipo === 'SOBRANTE') { 
+                        } else if (m.tipo === 'DESCARTE' || m.tipo === 'SOBRANTE') { 
                             descarteDia[m.productoId] = (descarteDia[m.productoId] || 0) + cant;
                             totalDesc += cant;
-                        }
-                        else if (m.tipo === 'REUTILIZACION') { 
+                        } else if (m.tipo === 'REUTILIZACION') { 
                             reutilizacionDia[m.productoId] = (reutilizacionDia[m.productoId] || 0) + cant;
+                        } else if (m.tipo === 'VENTA') {
+                            // ← NUEVO: registrar ventas del POS separadas
+                            ventaDia[m.productoId] = (ventaDia[m.productoId] || 0) + cant;
+                            totalVenta += cant;
                         }
                     }
                 }
@@ -198,6 +192,10 @@
             
             const kpiDesc = document.getElementById('kpi-descarte-total');
             if(kpiDesc) kpiDesc.innerText = totalDesc.toFixed(0);
+
+            // ← NUEVO: mostrar total ventas POS
+            const kpiVenta = document.getElementById('kpi-venta-pos');
+            if(kpiVenta) kpiVenta.innerText = totalVenta.toFixed(0);
             
             let porcentaje = 0;
             if(totalProd > 0) porcentaje = (totalDesc / totalProd) * 100;
@@ -216,20 +214,22 @@
                     const prod = produccionDia[p.id] || 0;
                     const desc = descarteDia[p.id] || 0;
                     const reut = reutilizacionDia[p.id] || 0;
-                    if (prod > 0 || desc > 0 || reut > 0) {
+                    const venta = ventaDia[p.id] || 0;   // ← NUEVO
+                    if (prod > 0 || desc > 0 || reut > 0 || venta > 0) {
                         hayDatos = true;
-                        const ventaEst = prod - reut - desc;
+                        const ventaEst = prod - reut - desc - venta;
                         tbody.innerHTML += `
                             <tr class="border-b border-gray-100 hover:bg-gray-50 text-xs sm:text-sm">
                                 <td class="py-2 pl-3 font-medium text-gray-800">${p.nombre}</td>
                                 <td class="py-2 text-center font-bold text-green-600 border-l">${prod > 0 ? prod.toFixed(1) : '-'}</td>
                                 <td class="py-2 text-center font-bold text-orange-500 border-l">${reut > 0 ? reut.toFixed(1) : '-'}</td>
                                 <td class="py-2 text-center font-bold text-red-600 border-l bg-red-50">${desc > 0 ? desc.toFixed(1) : '-'}</td>
-                                <td class="py-2 text-center font-bold text-blue-700 border-l">${ventaEst.toFixed(1)} <span class="text-[10px] text-gray-400 font-normal">${p.unidad}</span></td>
+                                <td class="py-2 text-center font-bold text-blue-600 border-l bg-blue-50">${venta > 0 ? venta.toFixed(1) : '-'}</td>
+                                <td class="py-2 text-center font-bold text-purple-700 border-l">${ventaEst.toFixed(1)} <span class="text-[10px] text-gray-400 font-normal">${p.unidad}</span></td>
                             </tr>`;
                     }
                 });
-                if (!hayDatos) tbody.innerHTML = '<tr><td colspan="5" class="text-center py-6 text-gray-400 italic text-xs">Sin movimientos recientes</td></tr>';
+                if (!hayDatos) tbody.innerHTML = '<tr><td colspan="6" class="text-center py-6 text-gray-400 italic text-xs">Sin movimientos recientes</td></tr>';
             }
 
             const grid = document.getElementById('grid-stock');
@@ -268,14 +268,13 @@
             });
             if (chartInstance) { chartInstance.destroy(); }
             if (dataValues.length === 0) return;
-
             chartInstance = new Chart(canvas, {
                 type: 'doughnut',
                 data: {
                     labels: labels,
                     datasets: [{
                         data: dataValues,
-                        backgroundColor: ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6'],
+                        backgroundColor: ['#10b981','#3b82f6','#f59e0b','#ef4444','#8b5cf6','#ec4899','#6366f1','#14b8a6'],
                         borderWidth: 1
                     }]
                 },
@@ -298,7 +297,7 @@
             const fecha = document.getElementById('fecha').value;
 
             if(!prod || isNaN(cantidad) || cantidad <= 0) { 
-                btn.disabled=false; btn.innerText="CONFIRMAR"; 
+                btn.disabled=false; btn.innerText="CONFIRMAR CARGA"; 
                 return alert("Datos inválidos."); 
             }
 
@@ -311,9 +310,14 @@
             let cantBaseCalculo = (tipo === 'ENTRADA') ? cantBase : -Math.abs(cantBase);
 
             db.collection(COLL_MOVIMIENTOS).add({
-                productoId: prodId, productoNombre: prod.nombre, tipo: tipo, 
-                cantidadOriginal: cantidad, formatoUsado: formatoTexto,
-                cantidadBase: cantBaseCalculo, operario: operario, fecha: fecha,
+                productoId: prodId,
+                productoNombre: prod.nombre,
+                tipo: tipo, 
+                cantidadOriginal: cantidad,
+                formatoUsado: formatoTexto,
+                cantidadBase: cantBaseCalculo,
+                operario: operario,
+                fecha: fecha,
                 timestamp: new Date().toISOString()
             }).then(() => {
                 mostrarToast("Movimiento registrado");
@@ -339,11 +343,9 @@
             if (!sel) return;
             sel.innerHTML = '<option value="" disabled selected>Seleccione producto...</option>';
             const filtrados = productosGlobal.filter(p => p.categoria === categoria);
-
-            document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('bg-amber-600', 'text-white', 'shadow-md'));
+            document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('bg-amber-600','text-white','shadow-md'));
             const btn = document.getElementById(`btn-cat-${categoria}`);
-            if (btn) btn.classList.add('bg-amber-600', 'text-white', 'shadow-md');
-
+            if (btn) btn.classList.add('bg-amber-600','text-white','shadow-md');
             filtrados.forEach(p => {
                 const opt = document.createElement('option');
                 opt.value = p.id; opt.text = p.nombre; sel.appendChild(opt);
@@ -357,22 +359,20 @@
             const tipo = document.getElementById('tipo');
             if (!s) return;
             s.innerHTML = '';
-            
             if(tipo) {
                 tipo.className = "input-field w-full font-bold border-2 text-sm ";
-                if(tipo.value === 'ENTRADA') tipo.classList.add('border-green-500', 'text-green-700');
-                else if(tipo.value === 'DESCARTE') tipo.classList.add('border-red-500', 'text-red-700');
-                else if(tipo.value === 'REUTILIZACION') tipo.classList.add('border-orange-400', 'text-orange-700');
-                else tipo.classList.add('border-blue-500', 'text-blue-700');
+                if(tipo.value === 'ENTRADA') tipo.classList.add('border-green-500','text-green-700');
+                else if(tipo.value === 'DESCARTE') tipo.classList.add('border-red-500','text-red-700');
+                else if(tipo.value === 'REUTILIZACION') tipo.classList.add('border-orange-400','text-orange-700');
+                else tipo.classList.add('border-blue-500','text-blue-700');
             }
-
             if(p) {
-                s.add(new Option("Unidad", "manual_unidad"));
-                s.add(new Option("Docena", "manual_docena"));
-                s.add(new Option("Kilogramo (Kg)", "manual_kg"));
-                const isStandard = ['Docena', 'Kg', 'Unidad'].includes(p.alterno); 
+                s.add(new Option("Unidad","manual_unidad"));
+                s.add(new Option("Docena","manual_docena"));
+                s.add(new Option("Kilogramo (Kg)","manual_kg"));
+                const isStandard = ['Docena','Kg','Unidad'].includes(p.alterno); 
                 if(p.alterno && p.alterno !== '-' && !isStandard) {
-                    s.add(new Option(`${p.alterno} (x${p.factor} ${p.unidad})`, "alterno"));
+                    s.add(new Option(`${p.alterno} (x${p.factor} ${p.unidad})`,"alterno"));
                 }
                 if (p.unidad.includes('Unidad')) s.value = "manual_unidad";
                 else if (p.unidad.includes('Kg')) s.value = "manual_kg";
@@ -417,10 +417,17 @@
                     gruposDia[dia].forEach(m => {
                         const hora = m.fecha.slice(11,16);
                         let color = 'text-gray-600', etiqueta = '';
-                        if(m.tipo === 'ENTRADA') { color = 'text-green-600'; etiqueta="PROD"; }
-                        else if(m.tipo === 'DESCARTE' || m.tipo === 'SOBRANTE') { color = 'text-red-600'; etiqueta="DESC"; }
-                        else if(m.tipo === 'REUTILIZACION') { color = 'text-orange-500'; etiqueta="REUT"; }
-                        else { color = 'text-blue-600'; etiqueta="VENTA"; }
+                        if(m.tipo === 'ENTRADA') {
+                            color = 'text-green-600'; etiqueta = 'PROD';
+                        } else if(m.tipo === 'DESCARTE' || m.tipo === 'SOBRANTE') {
+                            color = 'text-red-600'; etiqueta = 'DESC';
+                        } else if(m.tipo === 'REUTILIZACION') {
+                            color = 'text-orange-500'; etiqueta = 'REUT';
+                        } else if(m.tipo === 'VENTA') {
+                            // ← NUEVO: ventas del POS con color azul y etiqueta VENTA
+                            color = 'text-blue-600'; etiqueta = 'VENTA';
+                        }
+                        const signo = m.tipo === 'ENTRADA' ? '+' : '-';
                         const btnDel = isAdminUnlocked ? `<button onclick="eliminarMovimiento('${m.id}')" class="text-red-400 hover:text-red-600 ml-2"><i class="fas fa-trash-alt"></i></button>` : '';
                         html += `
                             <div class="p-2 flex justify-between items-center hover:bg-gray-50">
@@ -433,7 +440,7 @@
                                 </div>
                                 <div class="flex items-center gap-2">
                                     <span class="text-[10px] font-bold bg-gray-100 px-1 rounded text-gray-500">${etiqueta}</span>
-                                    <span class="font-bold ${color} text-sm w-16 text-right">${m.tipo === 'ENTRADA' ? '+' : '-'}${Math.abs(m.cantidadOriginal)}</span>
+                                    <span class="font-bold ${color} text-sm w-16 text-right">${signo}${Math.abs(m.cantidadOriginal)}</span>
                                     ${btnDel}
                                 </div>
                             </div>`;
@@ -456,11 +463,13 @@
                              if(m.tipo === 'ENTRADA') color = 'text-green-600';
                              else if(m.tipo === 'DESCARTE' || m.tipo === 'SOBRANTE') color = 'text-red-600';
                              else if(m.tipo === 'REUTILIZACION') color = 'text-orange-500';
+                             else if(m.tipo === 'VENTA') color = 'text-blue-600';
                              const fechaFmt = `${m.fecha.slice(8,10)}/${m.fecha.slice(5,7)} ${m.fecha.slice(11,16)}`;
+                             const signo = m.tipo === 'ENTRADA' ? '+' : '-';
                              const btnDel = isAdminUnlocked ? `<button onclick="eliminarMovimiento('${m.id}')" class="text-red-400 hover:text-red-600 ml-2"><i class="fas fa-trash-alt"></i></button>` : '';
                              itemsHtml += `<div class="flex justify-between text-xs border-b border-gray-100 py-1 px-2">
                                 <span class="text-gray-500">${fechaFmt} - ${m.operario}</span>
-                                <span class="font-bold ${color}">${m.tipo === 'ENTRADA' ? '+' : '-'}${Math.abs(m.cantidadOriginal)} ${m.formatoUsado}${btnDel}</span>
+                                <span class="font-bold ${color}">${signo}${Math.abs(m.cantidadOriginal)} ${m.formatoUsado}${btnDel}</span>
                              </div>`;
                         });
                         div.innerHTML += `
@@ -496,10 +505,10 @@
             document.querySelectorAll('.vista').forEach(d => d.classList.add('hidden'));
             document.getElementById(id).classList.remove('hidden');
             document.querySelectorAll('.nav-btn').forEach(b => {
-                b.classList.remove('border-amber-300', 'text-white');
-                b.classList.add('border-transparent', 'text-amber-100');
+                b.classList.remove('border-amber-300','text-white');
+                b.classList.add('border-transparent','text-amber-100');
             });
-            document.getElementById('btn-' + id).classList.add('border-amber-300', 'text-white');
+            document.getElementById('btn-' + id).classList.add('border-amber-300','text-white');
             if(id === 'vista-panel') actualizarPanelPrincipal(); 
             if(id === 'vista-carga') filtrarProductos('panaderia'); 
             if(id === 'vista-historial') actualizarHistorialVisual(); 
@@ -526,10 +535,7 @@
                 await cargarConfiguracionGeneral();
                 alert("✅ Guardado y Sincronizado correctamente.");
             } catch(e) { alert("Error: " + e.message); } 
-            finally {
-                btn.innerText = textoOriginal;
-                btn.disabled = false;
-            }
+            finally { btn.innerText = textoOriginal; btn.disabled = false; }
         }
 
         window.limpiarBaseDeDatos = async function() {
@@ -550,7 +556,7 @@
             auth.onAuthStateChanged(user => {
                 if (user) {
                     currentUser = user;
-                    document.getElementById('status-icon').classList.replace('text-red-500', 'text-green-400');
+                    document.getElementById('status-icon').classList.replace('text-red-500','text-green-400');
                     cargarConfiguracionGeneral().then(() => {
                         escucharMovimientos();
                         cambiarVista('vista-panel');
@@ -588,6 +594,8 @@
     </div>
 
     <main class="flex-1 overflow-y-auto bg-gray-50 p-2 sm:p-4 pb-20">
+
+        <!-- VISTA PANEL -->
         <div id="vista-panel" class="vista container mx-auto max-w-5xl space-y-4">
             <div class="bg-white p-3 rounded-lg shadow-sm border border-gray-200 flex justify-between items-center">
                 <div class="flex items-center gap-2">
@@ -600,7 +608,8 @@
                 </div>
             </div>
 
-            <div class="grid grid-cols-3 gap-2 sm:gap-4">
+            <!-- KPIs — ahora con 4 indicadores incluyendo Ventas POS -->
+            <div class="grid grid-cols-4 gap-2 sm:gap-4">
                 <div class="bg-white p-3 rounded-xl border border-gray-100 shadow-sm text-center">
                     <span class="text-[9px] sm:text-xs text-gray-400 block uppercase font-bold">Producción</span>
                     <span id="kpi-prod-total" class="text-xl font-bold text-green-600">0</span>
@@ -608,6 +617,10 @@
                 <div class="bg-white p-3 rounded-xl border border-gray-100 shadow-sm text-center">
                     <span class="text-[9px] sm:text-xs text-gray-400 block uppercase font-bold">Descarte</span>
                     <span id="kpi-descarte-total" class="text-xl font-bold text-red-500">0</span>
+                </div>
+                <div class="bg-white p-3 rounded-xl border border-gray-100 shadow-sm text-center">
+                    <span class="text-[9px] sm:text-xs text-gray-400 block uppercase font-bold">Ventas POS</span>
+                    <span id="kpi-venta-pos" class="text-xl font-bold text-blue-600">0</span>
                 </div>
                 <div class="bg-white p-3 rounded-xl border border-gray-100 shadow-sm text-center">
                     <span class="text-[9px] sm:text-xs text-gray-400 block uppercase font-bold">% Merma</span>
@@ -618,7 +631,7 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                     <div class="bg-gray-50 px-4 py-2 border-b border-gray-100 flex justify-between items-center">
-                        <h3 class="font-bold text-gray-700 text-sm">Detalle de Producción <span id="label-fecha-tabla" class="text-amber-700"></span></h3>
+                        <h3 class="font-bold text-gray-700 text-sm">Detalle <span id="label-fecha-tabla" class="text-amber-700"></span></h3>
                     </div>
                     <div class="overflow-x-auto">
                         <table class="w-full text-left">
@@ -628,7 +641,8 @@
                                     <th class="py-2 text-center">Prod</th>
                                     <th class="py-2 text-center">Reut</th>
                                     <th class="py-2 text-center">Desc</th>
-                                    <th class="py-2 text-center">Venta Est.</th>
+                                    <th class="py-2 text-center text-blue-500">Venta</th>
+                                    <th class="py-2 text-center">Stock Est.</th>
                                 </tr>
                             </thead>
                             <tbody id="tabla-produccion-hoy" class="divide-y divide-gray-50"></tbody>
@@ -651,18 +665,17 @@
             </div>
         </div>
 
+        <!-- VISTA CARGA -->
         <div id="vista-carga" class="vista hidden container mx-auto max-w-2xl">
             <div class="bg-white rounded-2xl shadow-xl overflow-hidden">
                 <div class="bg-amber-800 p-4 text-white">
                     <h2 class="text-lg font-bold flex items-center gap-2"><i class="fas fa-plus-circle"></i> Nueva Entrada de Mercadería</h2>
                 </div>
-                
                 <div class="p-4 grid grid-cols-3 gap-2">
                     <button id="btn-cat-panaderia" onclick="filtrarProductos('panaderia')" class="cat-btn py-2 rounded-lg text-xs font-bold border transition">PANADERIA</button>
                     <button id="btn-cat-pasteleria" onclick="filtrarProductos('pasteleria')" class="cat-btn py-2 rounded-lg text-xs font-bold border transition">PASTELERIA</button>
                     <button id="btn-cat-cocina" onclick="filtrarProductos('cocina')" class="cat-btn py-2 rounded-lg text-xs font-bold border transition">COCINA</button>
                 </div>
-
                 <form onsubmit="guardarMovimiento(event)" class="p-4 space-y-4">
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
@@ -679,7 +692,6 @@
                             </select>
                         </div>
                     </div>
-
                     <div class="grid grid-cols-2 gap-4">
                         <div>
                             <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Formato</label>
@@ -690,7 +702,6 @@
                             <input type="number" id="cantidad" step="0.1" required class="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-amber-500 outline-none text-sm" placeholder="0.0">
                         </div>
                     </div>
-
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                             <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Operario / Turno</label>
@@ -701,20 +712,28 @@
                             <input type="datetime-local" id="fecha" required class="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-amber-500 outline-none text-sm">
                         </div>
                     </div>
-
                     <button type="submit" class="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-4 rounded-xl shadow-lg transition transform active:scale-95 uppercase tracking-wider mt-4">Confirmar Carga</button>
                 </form>
             </div>
         </div>
 
+        <!-- VISTA HISTORIAL -->
         <div id="vista-historial" class="vista hidden container mx-auto max-w-3xl">
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-lg font-bold text-gray-700 uppercase tracking-tight">Registro de Movimientos</h2>
                 <button id="btn-toggle-historial" onclick="toggleModoHistorial()" class="bg-white px-3 py-1 rounded-full text-xs font-bold border text-amber-700 shadow-sm"><i class="fas fa-layer-group mr-1"></i> Agrupar</button>
             </div>
+            <!-- Leyenda de colores -->
+            <div class="flex gap-3 mb-3 flex-wrap">
+                <span class="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-1 rounded">● PROD = Producción</span>
+                <span class="text-[10px] font-bold text-orange-500 bg-orange-50 px-2 py-1 rounded">● REUT = Reutilización</span>
+                <span class="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-1 rounded">● DESC = Descarte</span>
+                <span class="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">● VENTA = Venta POS</span>
+            </div>
             <div id="contenedor-historial" class="space-y-2"></div>
         </div>
 
+        <!-- VISTA CONFIG -->
         <div id="vista-config" class="vista hidden container mx-auto max-w-4xl space-y-6">
             <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
                 <h2 class="text-xl font-bold mb-4 flex items-center gap-2"><i class="fas fa-tools text-amber-600"></i> Panel de Administración</h2>
