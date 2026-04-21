@@ -240,6 +240,95 @@
             if(actual) sel.value = actual;
         }
 
+        // ─── CIERRE DE STOCK ───────────────────────────────────────────────────────
+        // Guarda el stock actual de cada producto como punto de partida para mañana
+        window.cerrarStockDelDia = async function() {
+            if (!verificarAdmin()) return;
+            if (!confirm("¿Confirmar cierre de stock del día? Esto guarda el stock actual como base para mañana.")) return;
+
+            const btn = document.getElementById('btn-vista-config').nextElementSibling;
+            mostrarToast("Calculando stock...");
+
+            try {
+                const hoy = obtenerFechaHoyYMD();
+
+                // Calcular stock actual de cada producto desde el último cierre
+                const stockFinal = await calcularStockAcumulado();
+
+                // Guardar en cierres_stock/fecha
+                await db.collection('cierres_stock').doc(hoy).set({
+                    fecha: hoy,
+                    timestamp: new Date().toISOString(),
+                    stock: stockFinal
+                });
+
+                // Actualizar info en pantalla
+                mostrarInfoUltimoCierre(hoy);
+                mostrarToast("✅ Stock del día cerrado correctamente");
+            } catch(e) {
+                alert("Error al cerrar stock: " + e.message);
+            }
+        }
+
+        async function calcularStockAcumulado() {
+            // Buscar el último cierre de stock
+            const snap = await db.collection('cierres_stock')
+                .orderBy('fecha', 'desc').limit(1).get();
+
+            const stockBase = {};
+            let fechaDesde = null;
+
+            if (!snap.empty) {
+                const cierre = snap.docs[0].data();
+                fechaDesde = cierre.fecha + 'T00:00';
+                // El stock base es el del último cierre
+                Object.entries(cierre.stock || {}).forEach(([id, val]) => {
+                    stockBase[id] = val;
+                });
+            }
+
+            // Stock inicial de productos para los que no hay cierre
+            productosGlobal.forEach(p => {
+                if (stockBase[p.id] === undefined) stockBase[p.id] = p.stockInicial || 0;
+            });
+
+            // Sumar movimientos desde el último cierre (o todos si no hay cierre)
+            let query = db.collection(COLL_MOVIMIENTOS).orderBy('fecha', 'asc');
+            if (fechaDesde) query = query.where('fecha', '>=', fechaDesde);
+            const movSnap = await query.get();
+
+            movSnap.forEach(doc => {
+                const m = doc.data();
+                if (stockBase[m.productoId] === undefined) stockBase[m.productoId] = 0;
+                if (m.tipo === 'ENTRADA') {
+                    stockBase[m.productoId] += Math.abs(m.cantidadBase || 0);
+                } else {
+                    stockBase[m.productoId] -= Math.abs(m.cantidadBase || 0);
+                }
+            });
+
+            return stockBase;
+        }
+
+        async function mostrarInfoUltimoCierre(fecha) {
+            const el = document.getElementById('ultimo-cierre-info');
+            if (el && fecha) {
+                const [yyyy, mm, dd] = fecha.split('-');
+                el.textContent = `Último cierre: ${dd}/${mm}/${yyyy}`;
+            }
+        }
+
+        async function cargarInfoUltimoCierre() {
+            try {
+                const snap = await db.collection('cierres_stock')
+                    .orderBy('fecha', 'desc').limit(1).get();
+                if (!snap.empty) {
+                    mostrarInfoUltimoCierre(snap.docs[0].data().fecha);
+                }
+            } catch(e) {}
+        }
+        // ───────────────────────────────────────────────────────────────────────────
+
         function escucharMovimientos() {
             const limiteCarga = new Date();
             limiteCarga.setHours(limiteCarga.getHours() - 24);
@@ -364,19 +453,24 @@
                 }
             }
 
-            // Grid stock: solo muestra productos con movimiento en el día
+            // Grid stock: muestra stock acumulado desde último cierre
+            // Se recalcula en background para no bloquear el panel
+            actualizarGridStockAcumulado();
+            actualizarGraficos(produccionDia, productosGlobal);
+        }
+
+        // Stock acumulado para el grid — desde el último cierre + movimientos posteriores
+        async function actualizarGridStockAcumulado() {
             const grid = document.getElementById('grid-stock');
-            if (grid) {
+            if (!grid) return;
+            try {
+                const stockAcum = await calcularStockAcumulado();
                 grid.innerHTML = '';
-                let hayStock = false;
+                let hay = false;
                 productosGlobal.forEach(p => {
-                    const prod = produccionDia[p.id] || 0;
-                    const desc = descarteDia[p.id] || 0;
-                    const reut = reutilizacionDia[p.id] || 0;
-                    const venta = ventaDia[p.id] || 0;
-                    if (prod === 0 && desc === 0 && reut === 0 && venta === 0) return; // sin movimiento = no mostrar
-                    hayStock = true;
-                    const actual = stockMap[p.id] || 0;
+                    const actual = stockAcum[p.id] !== undefined ? stockAcum[p.id] : (p.stockInicial || 0);
+                    if (actual === 0 && !movimientosGlobal.some(m => m.productoId === p.id)) return;
+                    hay = true;
                     const borde = actual < 0 ? 'border-red-500' : (actual < 5 ? 'border-amber-400' : 'border-gray-200');
                     grid.innerHTML += `
                         <div class="bg-white p-2 rounded border-l-4 ${borde} shadow-sm flex justify-between items-center">
@@ -390,9 +484,10 @@
                             </div>
                         </div>`;
                 });
-                if (!hayStock) grid.innerHTML = '<p class="text-gray-400 text-xs text-center col-span-full py-4">Sin movimientos para esta fecha</p>';
+                if (!hay) grid.innerHTML = '<p class="text-gray-400 text-xs text-center col-span-full py-4">Sin stock registrado</p>';
+            } catch(e) {
+                console.error('Stock acumulado:', e);
             }
-            actualizarGraficos(produccionDia, productosGlobal);
         }
 
         let chartInstance = null;
@@ -737,6 +832,7 @@
                     document.getElementById('status-icon').classList.replace('text-red-500','text-green-400');
                     cargarConfiguracionGeneral().then(() => {
                         escucharMovimientos();
+                        cargarInfoUltimoCierre();
                         cambiarVista('vista-panel');
                     });
                 }
@@ -860,6 +956,7 @@
                             <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Tipo de Movimiento</label>
                             <select id="tipo" onchange="actualizarFormato()" class="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-amber-500 outline-none text-sm">
                                 <option value="ENTRADA">PRODUCCIÓN (+)</option>
+                                <option value="VENTA">VENTA (-)</option>
                                 <option value="REUTILIZACION">REUTILIZACIÓN (-)</option>
                                 <option value="DESCARTE">DESCARTE / MERMA (-)</option>
                                 <option value="SOBRANTE">SOBRANTE (-)</option>
@@ -944,6 +1041,14 @@
                         <div class="bg-red-50 p-4 rounded-xl border border-red-100">
                             <h3 class="text-red-700 font-bold text-sm mb-2">Zona de Peligro</h3>
                             <button onclick="limpiarBaseDeDatos()" class="w-full bg-white border border-red-200 text-red-600 py-2 rounded text-xs font-bold hover:bg-red-600 hover:text-white transition">REINICIAR TODA LA BASE DE DATOS</button>
+                        </div>
+                        <div class="bg-blue-50 p-4 rounded-xl border border-blue-100">
+                            <h3 class="text-blue-700 font-bold text-sm mb-1">Cierre de Stock</h3>
+                            <p class="text-[11px] text-blue-500 mb-3">Guarda el stock actual como punto de partida para mañana. Hacerlo al final de cada día.</p>
+                            <button onclick="cerrarStockDelDia()" class="w-full bg-blue-600 text-white py-2 rounded text-xs font-bold hover:bg-blue-700 transition">
+                                <i class="fas fa-archive mr-1"></i> CERRAR STOCK DEL DÍA
+                            </button>
+                            <div id="ultimo-cierre-info" class="mt-2 text-[10px] text-blue-400 text-center"></div>
                         </div>
                     </div>
                 </div>
