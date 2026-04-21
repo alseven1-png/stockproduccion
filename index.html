@@ -108,14 +108,16 @@
                 CATEGORIAS_NOMBRES = { ...CATS_FIJAS_NOMBRES };
                 catsExtra.forEach(c => { CATEGORIAS_NOMBRES[c.key] = c.nombre; });
 
-                // 2. Cargar productos de TODAS las categorías
-                for (const key of ORDEN_CATEGORIAS) {
-                    const docRef = db.collection(COLL_CONFIG).doc(`productos_${key}`);
-                    const docSnap = await docRef.get();
+                // 2. Cargar productos de TODAS las categorías en paralelo (más rápido)
+                const snapshots = await Promise.all(
+                    ORDEN_CATEGORIAS.map(key => db.collection(COLL_CONFIG).doc(`productos_${key}`).get())
+                );
+                for (let i = 0; i < ORDEN_CATEGORIAS.length; i++) {
+                    const key = ORDEN_CATEGORIAS[i];
+                    const docSnap = snapshots[i];
                     let csv = CATS_FIJAS.includes(key) ? getProductDefault(key) : '';
                     if (docSnap.exists) csv = docSnap.data().csv;
                     else if (csv) await docRef.set({ csv: csv });
-                    // Actualizar textarea en config si existe
                     const configEl = document.getElementById(`config-${key}`);
                     if(configEl) configEl.value = csv;
                     if (csv) productosGlobal.push(...procesarProductosCSV(csv, key));
@@ -265,6 +267,7 @@
             const filtroFechaInput = document.getElementById('filtro-fecha-panel');
             const fechaSeleccionada = filtroFechaInput ? filtroFechaInput.value : obtenerFechaHoyYMD();
 
+            // FIX 1: stockMap se calcula SOLO con movimientos del día seleccionado
             const stockMap = {}; 
             productosGlobal.forEach(p => stockMap[p.id] = p.stockInicial);
             
@@ -273,30 +276,28 @@
             const reutilizacionDia = {};
             const ventaDia = {};
             
-            let totalProd = 0, totalDesc = 0, totalVenta = 0;
+            let totalProd = 0, totalDesc = 0, totalReut = 0, totalVenta = 0, totalStockEst = 0;
 
+            // Solo procesar movimientos del día seleccionado (para stock y tabla)
             [...movimientosGlobal].reverse().forEach(m => {
-                if (stockMap[m.productoId] !== undefined) {
-                    if(m.tipo === 'ENTRADA') {
-                        stockMap[m.productoId] += Math.abs(m.cantidadBase);
-                    } else {
-                        stockMap[m.productoId] -= Math.abs(m.cantidadBase);
-                    }
-
-                    if (m.fecha.startsWith(fechaSeleccionada)) {
-                        const cant = Math.abs(m.cantidadBase);
-                        if (m.tipo === 'ENTRADA') { 
-                            produccionDia[m.productoId] = (produccionDia[m.productoId] || 0) + cant;
-                            totalProd += cant;
-                        } else if (m.tipo === 'DESCARTE' || m.tipo === 'SOBRANTE') { 
-                            descarteDia[m.productoId] = (descarteDia[m.productoId] || 0) + cant;
-                            totalDesc += cant;
-                        } else if (m.tipo === 'REUTILIZACION') { 
-                            reutilizacionDia[m.productoId] = (reutilizacionDia[m.productoId] || 0) + cant;
-                        } else if (m.tipo === 'VENTA') {
-                            ventaDia[m.productoId] = (ventaDia[m.productoId] || 0) + cant;
-                            totalVenta += cant;
-                        }
+                if (m.fecha.startsWith(fechaSeleccionada)) {
+                    const cant = Math.abs(m.cantidadBase);
+                    if (m.tipo === 'ENTRADA') { 
+                        produccionDia[m.productoId] = (produccionDia[m.productoId] || 0) + cant;
+                        if (stockMap[m.productoId] !== undefined) stockMap[m.productoId] += cant;
+                        totalProd += cant;
+                    } else if (m.tipo === 'DESCARTE' || m.tipo === 'SOBRANTE') { 
+                        descarteDia[m.productoId] = (descarteDia[m.productoId] || 0) + cant;
+                        if (stockMap[m.productoId] !== undefined) stockMap[m.productoId] -= cant;
+                        totalDesc += cant;
+                    } else if (m.tipo === 'REUTILIZACION') { 
+                        reutilizacionDia[m.productoId] = (reutilizacionDia[m.productoId] || 0) + cant;
+                        if (stockMap[m.productoId] !== undefined) stockMap[m.productoId] -= cant;
+                        totalReut += cant;
+                    } else if (m.tipo === 'VENTA') {
+                        ventaDia[m.productoId] = (ventaDia[m.productoId] || 0) + cant;
+                        if (stockMap[m.productoId] !== undefined) stockMap[m.productoId] -= cant;
+                        totalVenta += cant;
                     }
                 }
             });
@@ -321,10 +322,12 @@
                 kpiPorc.className = "text-xl font-bold " + (porcentaje > 15 ? "text-red-600" : (porcentaje > 5 ? "text-amber-600" : "text-green-600"));
             }
 
+            // FIX 2: Tabla con fila de TOTALES al final
             const tbody = document.getElementById('tabla-produccion-hoy');
             if (tbody) {
                 tbody.innerHTML = '';
                 let hayDatos = false;
+                let totProd = 0, totReut = 0, totDesc = 0, totVenta = 0, totStock = 0;
                 productosGlobal.forEach(p => {
                     const prod = produccionDia[p.id] || 0;
                     const desc = descarteDia[p.id] || 0;
@@ -332,7 +335,8 @@
                     const venta = ventaDia[p.id] || 0;
                     if (prod > 0 || desc > 0 || reut > 0 || venta > 0) {
                         hayDatos = true;
-                        const ventaEst = prod - reut - desc - venta;
+                        const stockEst = prod - reut - desc - venta;
+                        totProd += prod; totReut += reut; totDesc += desc; totVenta += venta; totStock += stockEst;
                         tbody.innerHTML += `
                             <tr class="border-b border-gray-100 hover:bg-gray-50 text-xs sm:text-sm">
                                 <td class="py-2 pl-3 font-medium text-gray-800">${p.nombre}</td>
@@ -340,17 +344,38 @@
                                 <td class="py-2 text-center font-bold text-orange-500 border-l">${reut > 0 ? reut.toFixed(1) : '-'}</td>
                                 <td class="py-2 text-center font-bold text-red-600 border-l bg-red-50">${desc > 0 ? desc.toFixed(1) : '-'}</td>
                                 <td class="py-2 text-center font-bold text-blue-600 border-l bg-blue-50">${venta > 0 ? venta.toFixed(1) : '-'}</td>
-                                <td class="py-2 text-center font-bold text-purple-700 border-l">${ventaEst.toFixed(1)} <span class="text-[10px] text-gray-400 font-normal">${p.unidad}</span></td>
+                                <td class="py-2 text-center font-bold text-purple-700 border-l">${stockEst.toFixed(1)} <span class="text-[10px] text-gray-400 font-normal">${p.unidad}</span></td>
                             </tr>`;
                     }
                 });
-                if (!hayDatos) tbody.innerHTML = '<tr><td colspan="6" class="text-center py-6 text-gray-400 italic text-xs">Sin movimientos recientes</td></tr>';
+                if (!hayDatos) {
+                    tbody.innerHTML = '<tr><td colspan="6" class="text-center py-6 text-gray-400 italic text-xs">Sin movimientos para esta fecha</td></tr>';
+                } else {
+                    // Fila de totales
+                    tbody.innerHTML += `
+                        <tr class="bg-gray-100 border-t-2 border-gray-300 text-xs font-bold">
+                            <td class="py-2 pl-3 text-gray-600 uppercase tracking-wide">TOTAL</td>
+                            <td class="py-2 text-center text-green-700 border-l">${totProd.toFixed(1)}</td>
+                            <td class="py-2 text-center text-orange-600 border-l">${totReut.toFixed(1)}</td>
+                            <td class="py-2 text-center text-red-700 border-l bg-red-100">${totDesc.toFixed(1)}</td>
+                            <td class="py-2 text-center text-blue-700 border-l bg-blue-100">${totVenta.toFixed(1)}</td>
+                            <td class="py-2 text-center text-purple-800 border-l">${totStock.toFixed(1)}</td>
+                        </tr>`;
+                }
             }
 
+            // Grid stock: solo muestra productos con movimiento en el día
             const grid = document.getElementById('grid-stock');
             if (grid) {
                 grid.innerHTML = '';
+                let hayStock = false;
                 productosGlobal.forEach(p => {
+                    const prod = produccionDia[p.id] || 0;
+                    const desc = descarteDia[p.id] || 0;
+                    const reut = reutilizacionDia[p.id] || 0;
+                    const venta = ventaDia[p.id] || 0;
+                    if (prod === 0 && desc === 0 && reut === 0 && venta === 0) return; // sin movimiento = no mostrar
+                    hayStock = true;
                     const actual = stockMap[p.id] || 0;
                     const borde = actual < 0 ? 'border-red-500' : (actual < 5 ? 'border-amber-400' : 'border-gray-200');
                     grid.innerHTML += `
@@ -365,6 +390,7 @@
                             </div>
                         </div>`;
                 });
+                if (!hayStock) grid.innerHTML = '<p class="text-gray-400 text-xs text-center col-span-full py-4">Sin movimientos para esta fecha</p>';
             }
             actualizarGraficos(produccionDia, productosGlobal);
         }
@@ -705,7 +731,7 @@
         </div>
     </div>
 
-    <main class="flex-1 overflow-y-auto bg-gray-50 p-2 sm:p-4 pb-20">
+    <main class="flex-1 overflow-y-auto bg-gray-50 p-2 sm:p-4 pb-36">
 
         <!-- VISTA PANEL -->
         <div id="vista-panel" class="vista container mx-auto max-w-5xl space-y-4">
