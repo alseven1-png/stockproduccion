@@ -584,38 +584,78 @@
                     div.innerHTML += html;
                 });
             } else {
+                // Agrupar por producto, con detalle completo + subtotales por tipo
                 const gruposProd = {};
                 movimientosGlobal.forEach(m => {
                     if (!gruposProd[m.productoId]) gruposProd[m.productoId] = [];
                     gruposProd[m.productoId].push(m);
                 });
-                productosGlobal.forEach(prod => {
-                    if (gruposProd[prod.id] && gruposProd[prod.id].length > 0) {
-                        const movs = gruposProd[prod.id];
-                        let itemsHtml = '';
-                        movs.forEach(m => {
-                             let color = 'text-gray-600';
-                             if(m.tipo === 'ENTRADA') color = 'text-green-600';
-                             else if(m.tipo === 'DESCARTE' || m.tipo === 'SOBRANTE') color = 'text-red-600';
-                             else if(m.tipo === 'REUTILIZACION') color = 'text-orange-500';
-                             else if(m.tipo === 'VENTA') color = 'text-blue-600';
-                             const fechaFmt = `${m.fecha.slice(8,10)}/${m.fecha.slice(5,7)} ${m.fecha.slice(11,16)}`;
-                             const signo = m.tipo === 'ENTRADA' ? '+' : '-';
-                             const btnDel = isAdminUnlocked ? `<button onclick="eliminarMovimiento('${m.id}')" class="text-red-400 hover:text-red-600 ml-2"><i class="fas fa-trash-alt"></i></button>` : '';
-                             itemsHtml += `<div class="flex justify-between text-xs border-b border-gray-100 py-1 px-2">
-                                <span class="text-gray-500">${fechaFmt} - ${m.operario}</span>
-                                <span class="font-bold ${color}">${signo}${Math.abs(m.cantidadOriginal)} ${m.formatoUsado}${btnDel}</span>
-                             </div>`;
-                        });
-                        div.innerHTML += `
-                            <div class="bg-white border rounded mb-2 overflow-hidden shadow-sm">
-                                <div class="bg-amber-50 p-2 font-bold text-amber-900 text-xs flex justify-between">
-                                    <span>${prod.nombre}</span>
-                                    <span class="bg-amber-200 px-2 rounded-full">${movs.length}</span>
+
+                // Ordenar por nombre de producto según productosGlobal, o al final si no está registrado
+                const idsOrdenados = productosGlobal.map(p => p.id).filter(id => gruposProd[id]);
+                // Agregar productos que están en movimientos pero no en productosGlobal (borrados)
+                Object.keys(gruposProd).forEach(id => { if (!idsOrdenados.includes(id)) idsOrdenados.push(id); });
+
+                idsOrdenados.forEach(prodId => {
+                    const movs = gruposProd[prodId];
+                    if (!movs || movs.length === 0) return;
+
+                    // Calcular totales por tipo
+                    const totales = { ENTRADA: 0, DESCARTE: 0, SOBRANTE: 0, REUTILIZACION: 0, VENTA: 0 };
+                    movs.forEach(m => { totales[m.tipo] = (totales[m.tipo] || 0) + Math.abs(m.cantidadBase); });
+
+                    const nombreProd = movs[0].productoNombre;
+                    const unidad = productosGlobal.find(p => p.id === prodId)?.unidad || '';
+
+                    // Filas individuales ordenadas por fecha
+                    const movsOrdenados = [...movs].sort((a,b) => a.fecha.localeCompare(b.fecha));
+                    let itemsHtml = '';
+                    movsOrdenados.forEach(m => {
+                        let color = 'text-gray-600', etiqueta = '', bgRow = '';
+                        if(m.tipo === 'ENTRADA') { color = 'text-green-600'; etiqueta = 'PROD'; bgRow = 'bg-green-50'; }
+                        else if(m.tipo === 'DESCARTE' || m.tipo === 'SOBRANTE') { color = 'text-red-600'; etiqueta = 'DESC'; bgRow = 'bg-red-50'; }
+                        else if(m.tipo === 'REUTILIZACION') { color = 'text-orange-500'; etiqueta = 'REUT'; bgRow = ''; }
+                        else if(m.tipo === 'VENTA') { color = 'text-blue-600'; etiqueta = 'VENTA'; bgRow = 'bg-blue-50'; }
+                        const signo = m.tipo === 'ENTRADA' ? '+' : '-';
+                        const dia = m.fecha.slice(8,10) + '/' + m.fecha.slice(5,7);
+                        const hora = m.fecha.slice(11,16);
+                        const btnDel = isAdminUnlocked ? `<button onclick="eliminarMovimiento('${m.id}')" class="text-red-400 hover:text-red-600 ml-1"><i class="fas fa-trash-alt text-[10px]"></i></button>` : '';
+                        itemsHtml += `
+                            <div class="flex items-center justify-between px-3 py-1.5 border-b border-gray-100 ${bgRow} hover:opacity-80 text-xs">
+                                <div class="flex items-center gap-2 text-gray-500">
+                                    <span class="font-mono w-10 text-right">${hora}</span>
+                                    <span class="text-gray-300">|</span>
+                                    <span>${dia}</span>
+                                    <span class="text-gray-300">|</span>
+                                    <span class="truncate max-w-[80px]">${m.operario}</span>
                                 </div>
-                                <div>${itemsHtml}</div>
+                                <div class="flex items-center gap-1.5">
+                                    <span class="text-[9px] font-bold bg-white border px-1 rounded ${color}">${etiqueta}</span>
+                                    <span class="font-bold ${color} w-16 text-right">${signo}${Math.abs(m.cantidadOriginal)} <span class="font-normal text-gray-400">${m.formatoUsado}</span></span>
+                                    ${btnDel}
+                                </div>
                             </div>`;
-                    }
+                    });
+
+                    // Fila de totales
+                    let totalesHtml = '<div class="flex flex-wrap gap-2 px-3 py-2 bg-gray-50 border-t border-gray-200 text-[10px] font-bold">';
+                    if (totales.ENTRADA > 0)     totalesHtml += `<span class="text-green-700">▲ PROD: ${totales.ENTRADA.toFixed(1)} ${unidad}</span>`;
+                    if (totales.REUTILIZACION > 0) totalesHtml += `<span class="text-orange-600">↩ REUT: ${totales.REUTILIZACION.toFixed(1)} ${unidad}</span>`;
+                    if ((totales.DESCARTE || 0) + (totales.SOBRANTE || 0) > 0) totalesHtml += `<span class="text-red-600">▼ DESC: ${((totales.DESCARTE||0)+(totales.SOBRANTE||0)).toFixed(1)} ${unidad}</span>`;
+                    if (totales.VENTA > 0)       totalesHtml += `<span class="text-blue-600">● VENTA: ${totales.VENTA.toFixed(1)} ${unidad}</span>`;
+                    const stockEst = (totales.ENTRADA||0) - (totales.REUTILIZACION||0) - (totales.DESCARTE||0) - (totales.SOBRANTE||0) - (totales.VENTA||0);
+                    totalesHtml += `<span class="ml-auto text-purple-700">STOCK EST: ${stockEst.toFixed(1)} ${unidad}</span>`;
+                    totalesHtml += '</div>';
+
+                    div.innerHTML += `
+                        <div class="bg-white border rounded-lg mb-3 overflow-hidden shadow-sm">
+                            <div class="bg-amber-800 px-3 py-2 flex justify-between items-center">
+                                <span class="font-bold text-white text-xs">${nombreProd}</span>
+                                <span class="text-[10px] bg-amber-600 text-white px-2 py-0.5 rounded-full">${movs.length} mov.</span>
+                            </div>
+                            ${itemsHtml}
+                            ${totalesHtml}
+                        </div>`;
                 });
             }
         }
