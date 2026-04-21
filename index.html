@@ -35,11 +35,21 @@
         let movimientosGlobal = []; 
         let isAdminUnlocked = false; 
         let modoHistorial = 'cronologico'; 
+
+        // ─── CATEGORÍAS ────────────────────────────────────────────────────────────
+        // Las 3 fijas nunca se tocan en Firebase (mismos doc IDs de siempre).
+        // Las extras se guardan en UN ÚNICO doc separado: "categorias_extra"
+        // → NO interfiere con productos_panaderia / productos_pasteleria / productos_cocina
+        const CATS_FIJAS = ['panaderia', 'pasteleria', 'cocina'];
+        const CATS_FIJAS_NOMBRES = { panaderia: 'Panadería', pasteleria: 'Pastelería', cocina: 'Cocina' };
         
+        // Estado dinámico de categorías (se completa al cargar)
+        let ORDEN_CATEGORIAS = [...CATS_FIJAS];
+        let CATEGORIAS_NOMBRES = { ...CATS_FIJAS_NOMBRES };
+        // ───────────────────────────────────────────────────────────────────────────
+
         const COLL_MOVIMIENTOS = "movimientos"; 
         const COLL_CONFIG = "configuracion";
-        const ORDEN_CATEGORIAS = ['panaderia', 'pasteleria', 'cocina'];
-        const CATEGORIAS_NOMBRES = { panaderia: 'Panadería', pasteleria: 'Pastelería', cocina: 'Cocina' };
         
         function obtenerFechaLocal() {
             const now = new Date();
@@ -82,19 +92,36 @@
             });
         }
 
+        // ─── CARGA CONFIG ──────────────────────────────────────────────────────────
         async function cargarConfiguracionGeneral() {
             try {
                 productosGlobal = [];
+
+                // 1. Cargar categorías extra PRIMERO (doc aislado, no toca los fijos)
+                const docExtra = await db.collection(COLL_CONFIG).doc("categorias_extra").get();
+                let catsExtra = [];
+                if (docExtra.exists) {
+                    catsExtra = docExtra.data().lista || [];
+                }
+                // Reconstruir orden y nombres con extras
+                ORDEN_CATEGORIAS = [...CATS_FIJAS, ...catsExtra.map(c => c.key)];
+                CATEGORIAS_NOMBRES = { ...CATS_FIJAS_NOMBRES };
+                catsExtra.forEach(c => { CATEGORIAS_NOMBRES[c.key] = c.nombre; });
+
+                // 2. Cargar productos de TODAS las categorías
                 for (const key of ORDEN_CATEGORIAS) {
                     const docRef = db.collection(COLL_CONFIG).doc(`productos_${key}`);
                     const docSnap = await docRef.get();
-                    let csv = getProductDefault(key);
+                    let csv = CATS_FIJAS.includes(key) ? getProductDefault(key) : '';
                     if (docSnap.exists) csv = docSnap.data().csv;
-                    else await docRef.set({ csv: csv });
+                    else if (csv) await docRef.set({ csv: csv });
+                    // Actualizar textarea en config si existe
                     const configEl = document.getElementById(`config-${key}`);
                     if(configEl) configEl.value = csv;
-                    productosGlobal.push(...procesarProductosCSV(csv, key));
+                    if (csv) productosGlobal.push(...procesarProductosCSV(csv, key));
                 }
+
+                // 3. Operarios (sin cambios)
                 const docOp = await db.collection(COLL_CONFIG).doc("operarios_lista").get();
                 let txtOp = "Mañana\nTarde\nNoche";
                 if (docOp.exists) txtOp = docOp.data().lista;
@@ -103,8 +130,101 @@
                 if(opEl) opEl.value = txtOp; 
                 operariosGlobal = txtOp.split('\n').map(s => s.trim()).filter(s => s.length > 0);
                 llenarSelectOperarios();
+
+                // 4. Renderizar secciones dinámicas en Config
+                renderizarSeccionesConfig(catsExtra);
+                renderizarBotonesCategorias();
+
             } catch (e) { console.error("Error config:", e); }
         }
+        // ───────────────────────────────────────────────────────────────────────────
+
+        // ─── RENDER DINÁMICO ───────────────────────────────────────────────────────
+        function renderizarBotonesCategorias() {
+            const contenedor = document.getElementById('contenedor-cats-carga');
+            if (!contenedor) return;
+            contenedor.innerHTML = '';
+            ORDEN_CATEGORIAS.forEach(key => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.id = `btn-cat-${key}`;
+                btn.className = 'cat-btn py-2 rounded-lg text-xs font-bold border transition';
+                btn.textContent = CATEGORIAS_NOMBRES[key].toUpperCase();
+                btn.onclick = () => filtrarProductos(key);
+                contenedor.appendChild(btn);
+            });
+        }
+
+        function renderizarSeccionesConfig(catsExtra) {
+            // Secciones fijas: ya están en el HTML, solo actualizamos valores
+            // Secciones extra: se renderizan dinámicamente en #config-cats-extra
+            const contenedor = document.getElementById('config-cats-extra');
+            if (!contenedor) return;
+            contenedor.innerHTML = '';
+            catsExtra.forEach(c => {
+                const div = document.createElement('div');
+                div.id = `config-bloque-${c.key}`;
+                div.innerHTML = `
+                    <div class="flex justify-between items-center mb-1">
+                        <label class="text-[10px] font-bold text-blue-700 uppercase">${c.nombre}</label>
+                        <button type="button" onclick="eliminarCategoriaExtra('${c.key}')" 
+                            class="text-[10px] text-red-400 hover:text-red-600 font-bold">
+                            <i class="fas fa-trash-alt mr-1"></i>Eliminar categoría
+                        </button>
+                    </div>
+                    <textarea id="config-${c.key}" rows="4" 
+                        class="w-full p-2 bg-gray-50 border rounded font-mono text-xs border-blue-200"></textarea>`;
+                contenedor.appendChild(div);
+                // Cargar valor guardado
+                const val = productosGlobal.filter(p => p.categoria === c.key)
+                    .map(p => `${p.nombre}|${p.unidad}|${p.alterno}|${p.factor}|${p.stockInicial}`).join('\n');
+                const ta = document.getElementById(`config-${c.key}`);
+                if (ta) {
+                    db.collection(COLL_CONFIG).doc(`productos_${c.key}`).get().then(snap => {
+                        if (snap.exists) ta.value = snap.data().csv;
+                    });
+                }
+            });
+        }
+        // ───────────────────────────────────────────────────────────────────────────
+
+        // ─── GESTIÓN CATEGORÍAS EXTRA ──────────────────────────────────────────────
+        window.agregarCategoriaExtra = async function() {
+            if (!isAdminUnlocked) { if(!verificarAdmin()) return; }
+            const nombre = prompt("Nombre de la nueva categoría (ej: Bebidas):");
+            if (!nombre || !nombre.trim()) return;
+            const key = nombre.trim().toLowerCase()
+                .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+                .replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+            if (!key) return alert("Nombre inválido.");
+            if (ORDEN_CATEGORIAS.includes(key)) return alert("Esa categoría ya existe.");
+
+            // Leer extras actuales
+            const docExtra = await db.collection(COLL_CONFIG).doc("categorias_extra").get();
+            const catsExtra = docExtra.exists ? (docExtra.data().lista || []) : [];
+            catsExtra.push({ key, nombre: nombre.trim() });
+
+            // Guardar doc extra aislado
+            await db.collection(COLL_CONFIG).doc("categorias_extra").set({ lista: catsExtra });
+            // Crear doc vacío para productos de la nueva cat
+            await db.collection(COLL_CONFIG).doc(`productos_${key}`).set({ csv: '' });
+
+            mostrarToast(`Categoría "${nombre.trim()}" creada`);
+            await cargarConfiguracionGeneral();
+        }
+
+        window.eliminarCategoriaExtra = async function(key) {
+            if (!verificarAdmin()) return;
+            if (!confirm(`⚠️ ¿Eliminar la categoría "${CATEGORIAS_NOMBRES[key]}" y todos sus productos?`)) return;
+            const docExtra = await db.collection(COLL_CONFIG).doc("categorias_extra").get();
+            let catsExtra = docExtra.exists ? (docExtra.data().lista || []) : [];
+            catsExtra = catsExtra.filter(c => c.key !== key);
+            await db.collection(COLL_CONFIG).doc("categorias_extra").set({ lista: catsExtra });
+            await db.collection(COLL_CONFIG).doc(`productos_${key}`).delete();
+            mostrarToast(`Categoría eliminada`);
+            await cargarConfiguracionGeneral();
+        }
+        // ───────────────────────────────────────────────────────────────────────────
 
         function llenarSelectOperarios() {
             const sel = document.getElementById('operario');
@@ -151,7 +271,7 @@
             const produccionDia = {};
             const descarteDia = {};
             const reutilizacionDia = {};
-            const ventaDia = {};   // ← NUEVO: acumular ventas del POS
+            const ventaDia = {};
             
             let totalProd = 0, totalDesc = 0, totalVenta = 0;
 
@@ -160,7 +280,6 @@
                     if(m.tipo === 'ENTRADA') {
                         stockMap[m.productoId] += Math.abs(m.cantidadBase);
                     } else {
-                        // DESCARTE, SOBRANTE, REUTILIZACION, VENTA → todos restan stock
                         stockMap[m.productoId] -= Math.abs(m.cantidadBase);
                     }
 
@@ -175,7 +294,6 @@
                         } else if (m.tipo === 'REUTILIZACION') { 
                             reutilizacionDia[m.productoId] = (reutilizacionDia[m.productoId] || 0) + cant;
                         } else if (m.tipo === 'VENTA') {
-                            // ← NUEVO: registrar ventas del POS separadas
                             ventaDia[m.productoId] = (ventaDia[m.productoId] || 0) + cant;
                             totalVenta += cant;
                         }
@@ -189,11 +307,8 @@
 
             const kpiProd = document.getElementById('kpi-prod-total');
             if(kpiProd) kpiProd.innerText = totalProd.toFixed(0);
-            
             const kpiDesc = document.getElementById('kpi-descarte-total');
             if(kpiDesc) kpiDesc.innerText = totalDesc.toFixed(0);
-
-            // ← NUEVO: mostrar total ventas POS
             const kpiVenta = document.getElementById('kpi-venta-pos');
             if(kpiVenta) kpiVenta.innerText = totalVenta.toFixed(0);
             
@@ -214,7 +329,7 @@
                     const prod = produccionDia[p.id] || 0;
                     const desc = descarteDia[p.id] || 0;
                     const reut = reutilizacionDia[p.id] || 0;
-                    const venta = ventaDia[p.id] || 0;   // ← NUEVO
+                    const venta = ventaDia[p.id] || 0;
                     if (prod > 0 || desc > 0 || reut > 0 || venta > 0) {
                         hayDatos = true;
                         const ventaEst = prod - reut - desc - venta;
@@ -242,7 +357,7 @@
                         <div class="bg-white p-2 rounded border-l-4 ${borde} shadow-sm flex justify-between items-center">
                             <div class="overflow-hidden pr-2">
                                 <h4 class="font-bold text-gray-700 text-xs truncate" title="${p.nombre}">${p.nombre}</h4>
-                                <span class="text-[9px] text-gray-400 uppercase tracking-wider">${CATEGORIAS_NOMBRES[p.categoria]}</span>
+                                <span class="text-[9px] text-gray-400 uppercase tracking-wider">${CATEGORIAS_NOMBRES[p.categoria] || p.categoria}</span>
                             </div>
                             <div class="text-right">
                                 <span class="block text-sm font-bold ${actual < 0 ? 'text-red-600' : 'text-gray-800'}">${actual.toFixed(1)}</span>
@@ -417,16 +532,10 @@
                     gruposDia[dia].forEach(m => {
                         const hora = m.fecha.slice(11,16);
                         let color = 'text-gray-600', etiqueta = '';
-                        if(m.tipo === 'ENTRADA') {
-                            color = 'text-green-600'; etiqueta = 'PROD';
-                        } else if(m.tipo === 'DESCARTE' || m.tipo === 'SOBRANTE') {
-                            color = 'text-red-600'; etiqueta = 'DESC';
-                        } else if(m.tipo === 'REUTILIZACION') {
-                            color = 'text-orange-500'; etiqueta = 'REUT';
-                        } else if(m.tipo === 'VENTA') {
-                            // ← NUEVO: ventas del POS con color azul y etiqueta VENTA
-                            color = 'text-blue-600'; etiqueta = 'VENTA';
-                        }
+                        if(m.tipo === 'ENTRADA') { color = 'text-green-600'; etiqueta = 'PROD'; }
+                        else if(m.tipo === 'DESCARTE' || m.tipo === 'SOBRANTE') { color = 'text-red-600'; etiqueta = 'DESC'; }
+                        else if(m.tipo === 'REUTILIZACION') { color = 'text-orange-500'; etiqueta = 'REUT'; }
+                        else if(m.tipo === 'VENTA') { color = 'text-blue-600'; etiqueta = 'VENTA'; }
                         const signo = m.tipo === 'ENTRADA' ? '+' : '-';
                         const btnDel = isAdminUnlocked ? `<button onclick="eliminarMovimiento('${m.id}')" class="text-red-400 hover:text-red-600 ml-2"><i class="fas fa-trash-alt"></i></button>` : '';
                         html += `
@@ -510,19 +619,22 @@
             });
             document.getElementById('btn-' + id).classList.add('border-amber-300','text-white');
             if(id === 'vista-panel') actualizarPanelPrincipal(); 
-            if(id === 'vista-carga') filtrarProductos('panaderia'); 
+            if(id === 'vista-carga') filtrarProductos(ORDEN_CATEGORIAS[0]); 
             if(id === 'vista-historial') actualizarHistorialVisual(); 
         }
         
         window.guardarConfiguracion = async function() {
             if (!verificarAdmin()) return;
-            const btn = document.querySelector('#vista-config button');
+            const btn = document.querySelector('#vista-config .btn-guardar');
             const textoOriginal = btn.innerText;
             btn.innerText = "GUARDANDO Y SINCRONIZANDO...";
             btn.disabled = true;
             try {
+                // Guardar todas las categorías (fijas + extras)
                 for (const key of ORDEN_CATEGORIAS) {
-                    const val = document.getElementById(`config-${key}`).value;
+                    const el = document.getElementById(`config-${key}`);
+                    if (!el) continue;
+                    const val = el.value;
                     const listaLimpia = procesarProductosCSV(val, key);
                     await db.collection(COLL_CONFIG).doc(`productos_${key}`).set({ 
                         csv: val,
@@ -608,7 +720,6 @@
                 </div>
             </div>
 
-            <!-- KPIs — ahora con 4 indicadores incluyendo Ventas POS -->
             <div class="grid grid-cols-4 gap-2 sm:gap-4">
                 <div class="bg-white p-3 rounded-xl border border-gray-100 shadow-sm text-center">
                     <span class="text-[9px] sm:text-xs text-gray-400 block uppercase font-bold">Producción</span>
@@ -671,11 +782,8 @@
                 <div class="bg-amber-800 p-4 text-white">
                     <h2 class="text-lg font-bold flex items-center gap-2"><i class="fas fa-plus-circle"></i> Nueva Entrada de Mercadería</h2>
                 </div>
-                <div class="p-4 grid grid-cols-3 gap-2">
-                    <button id="btn-cat-panaderia" onclick="filtrarProductos('panaderia')" class="cat-btn py-2 rounded-lg text-xs font-bold border transition">PANADERIA</button>
-                    <button id="btn-cat-pasteleria" onclick="filtrarProductos('pasteleria')" class="cat-btn py-2 rounded-lg text-xs font-bold border transition">PASTELERIA</button>
-                    <button id="btn-cat-cocina" onclick="filtrarProductos('cocina')" class="cat-btn py-2 rounded-lg text-xs font-bold border transition">COCINA</button>
-                </div>
+                <!-- Botones de categoría: se generan dinámicamente -->
+                <div id="contenedor-cats-carga" class="p-4 grid grid-cols-3 gap-2"></div>
                 <form onsubmit="guardarMovimiento(event)" class="p-4 space-y-4">
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
@@ -723,7 +831,6 @@
                 <h2 class="text-lg font-bold text-gray-700 uppercase tracking-tight">Registro de Movimientos</h2>
                 <button id="btn-toggle-historial" onclick="toggleModoHistorial()" class="bg-white px-3 py-1 rounded-full text-xs font-bold border text-amber-700 shadow-sm"><i class="fas fa-layer-group mr-1"></i> Agrupar</button>
             </div>
-            <!-- Leyenda de colores -->
             <div class="flex gap-3 mb-3 flex-wrap">
                 <span class="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-1 rounded">● PROD = Producción</span>
                 <span class="text-[10px] font-bold text-orange-500 bg-orange-50 px-2 py-1 rounded">● REUT = Reutilización</span>
@@ -741,6 +848,7 @@
                     <div>
                         <h3 class="font-bold text-xs uppercase text-gray-400 mb-2">Productos (CSV: Nombre|Unidad|Alt|Factor|Stock)</h3>
                         <div class="space-y-4">
+                            <!-- Categorías fijas -->
                             <div>
                                 <label class="text-[10px] font-bold text-amber-700">PANADERÍA</label>
                                 <textarea id="config-panaderia" rows="4" class="w-full p-2 bg-gray-50 border rounded font-mono text-xs"></textarea>
@@ -753,6 +861,13 @@
                                 <label class="text-[10px] font-bold text-amber-700">COCINA</label>
                                 <textarea id="config-cocina" rows="4" class="w-full p-2 bg-gray-50 border rounded font-mono text-xs"></textarea>
                             </div>
+                            <!-- Categorías extra: se renderizan dinámicamente aquí -->
+                            <div id="config-cats-extra"></div>
+                            <!-- Botón agregar categoría -->
+                            <button type="button" onclick="agregarCategoriaExtra()"
+                                class="w-full border-2 border-dashed border-blue-300 text-blue-600 hover:bg-blue-50 font-bold py-2 rounded-lg text-xs transition flex items-center justify-center gap-2">
+                                <i class="fas fa-plus-circle"></i> Agregar nueva categoría
+                            </button>
                         </div>
                     </div>
                     <div class="space-y-6">
@@ -766,7 +881,7 @@
                         </div>
                     </div>
                 </div>
-                <button onclick="guardarConfiguracion()" class="w-full bg-green-600 text-white font-bold py-4 rounded-xl mt-6 shadow-md hover:bg-green-700 transition">GUARDAR CAMBIOS Y SINCRONIZAR</button>
+                <button onclick="guardarConfiguracion()" class="btn-guardar w-full bg-green-600 text-white font-bold py-4 rounded-xl mt-6 shadow-md hover:bg-green-700 transition">GUARDAR CAMBIOS Y SINCRONIZAR</button>
             </div>
         </div>
     </main>
