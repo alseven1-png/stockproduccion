@@ -356,6 +356,14 @@
             const filtroFechaInput = document.getElementById('filtro-fecha-panel');
             const fechaSeleccionada = filtroFechaInput ? filtroFechaInput.value : obtenerFechaHoyYMD();
 
+            // Función de formato inteligente según unidad del producto
+            const fmt = (val, unidad) => {
+                if (val === 0) return '-';
+                const u = (unidad || '').toLowerCase();
+                if (u.includes('kg')) return val.toFixed(3);
+                return Number.isInteger(val) ? val.toString() : val.toFixed(1);
+            };
+
             // FIX 1: stockMap se calcula SOLO con movimientos del día seleccionado
             const stockMap = {}; 
             productosGlobal.forEach(p => stockMap[p.id] = p.stockInicial);
@@ -429,11 +437,11 @@
                         tbody.innerHTML += `
                             <tr class="border-b border-gray-100 hover:bg-gray-50 text-xs sm:text-sm">
                                 <td class="py-2 pl-3 font-medium text-gray-800">${p.nombre}</td>
-                                <td class="py-2 text-center font-bold text-green-600 border-l">${prod > 0 ? prod.toFixed(1) : '-'}</td>
-                                <td class="py-2 text-center font-bold text-orange-500 border-l">${reut > 0 ? reut.toFixed(1) : '-'}</td>
-                                <td class="py-2 text-center font-bold text-red-600 border-l bg-red-50">${desc > 0 ? desc.toFixed(1) : '-'}</td>
-                                <td class="py-2 text-center font-bold text-blue-600 border-l bg-blue-50">${venta > 0 ? venta.toFixed(1) : '-'}</td>
-                                <td class="py-2 text-center font-bold text-purple-700 border-l">${stockEst.toFixed(1)} <span class="text-[10px] text-gray-400 font-normal">${p.unidad}</span></td>
+                                <td class="py-2 text-center font-bold text-green-600 border-l">${prod > 0 ? fmt(prod, p.unidad) : '-'}</td>
+                                <td class="py-2 text-center font-bold text-orange-500 border-l">${reut > 0 ? fmt(reut, p.unidad) : '-'}</td>
+                                <td class="py-2 text-center font-bold text-red-600 border-l bg-red-50">${desc > 0 ? fmt(desc, p.unidad) : '-'}</td>
+                                <td class="py-2 text-center font-bold text-blue-600 border-l bg-blue-50">${venta > 0 ? fmt(venta, p.unidad) : '-'}</td>
+                                <td class="py-2 text-center font-bold text-purple-700 border-l">${fmt(stockEst, p.unidad)} <span class="text-[10px] text-gray-400 font-normal">${p.unidad}</span></td>
                             </tr>`;
                     }
                 });
@@ -444,11 +452,11 @@
                     tbody.innerHTML += `
                         <tr class="bg-gray-100 border-t-2 border-gray-300 text-xs font-bold">
                             <td class="py-2 pl-3 text-gray-600 uppercase tracking-wide">TOTAL</td>
-                            <td class="py-2 text-center text-green-700 border-l">${totProd.toFixed(1)}</td>
-                            <td class="py-2 text-center text-orange-600 border-l">${totReut.toFixed(1)}</td>
-                            <td class="py-2 text-center text-red-700 border-l bg-red-100">${totDesc.toFixed(1)}</td>
-                            <td class="py-2 text-center text-blue-700 border-l bg-blue-100">${totVenta.toFixed(1)}</td>
-                            <td class="py-2 text-center text-purple-800 border-l">${totStock.toFixed(1)}</td>
+                            <td class="py-2 text-center text-green-700 border-l">${totProd.toFixed(3)}</td>
+                            <td class="py-2 text-center text-orange-600 border-l">${totReut.toFixed(3)}</td>
+                            <td class="py-2 text-center text-red-700 border-l bg-red-100">${totDesc.toFixed(3)}</td>
+                            <td class="py-2 text-center text-blue-700 border-l bg-blue-100">${totVenta.toFixed(3)}</td>
+                            <td class="py-2 text-center text-purple-800 border-l">${totStock.toFixed(3)}</td>
                         </tr>`;
                 }
             }
@@ -479,7 +487,7 @@
                                 <span class="text-[9px] text-gray-400 uppercase tracking-wider">${CATEGORIAS_NOMBRES[p.categoria] || p.categoria}</span>
                             </div>
                             <div class="text-right">
-                                <span class="block text-sm font-bold ${actual < 0 ? 'text-red-600' : 'text-gray-800'}">${actual.toFixed(1)}</span>
+                                <span class="block text-sm font-bold ${actual < 0 ? 'text-red-600' : 'text-gray-800'}">${(p.unidad||'').toLowerCase().includes('kg') ? actual.toFixed(3) : actual.toFixed(1)}</span>
                                 <span class="text-[9px] text-gray-500">${p.unidad}</span>
                             </div>
                         </div>`;
