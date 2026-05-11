@@ -540,9 +540,13 @@
             const operario = document.getElementById('operario').value;
             const fecha = document.getElementById('fecha').value;
 
-            if(!prod || isNaN(cantidad) || cantidad <= 0) { 
-                btn.disabled=false; btn.innerText="CONFIRMAR CARGA"; 
-                return alert("Datos inválidos."); 
+            if(!prod || isNaN(cantidad) || cantidad <= 0) {
+                btn.disabled=false; btn.innerText="CONFIRMAR CARGA";
+                return alert("Datos inválidos.");
+            }
+            if(!operario){
+                btn.disabled=false; btn.innerText="CONFIRMAR CARGA";
+                return alert("Seleccioná tu nombre antes de registrar.");
             }
 
             let cantBase = cantidad;
@@ -964,10 +968,8 @@
                             <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Tipo de Movimiento</label>
                             <select id="tipo" onchange="actualizarFormato()" class="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-amber-500 outline-none text-sm">
                                 <option value="ENTRADA">PRODUCCIÓN (+)</option>
-                                <option value="VENTA">VENTA (-)</option>
                                 <option value="REUTILIZACION">REUTILIZACIÓN (-)</option>
                                 <option value="DESCARTE">DESCARTE / MERMA (-)</option>
-                                <option value="SOBRANTE">SOBRANTE (-)</option>
                             </select>
                         </div>
                     </div>
@@ -1006,7 +1008,7 @@
                 <span class="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-1 rounded">● PROD = Producción</span>
                 <span class="text-[10px] font-bold text-orange-500 bg-orange-50 px-2 py-1 rounded">● REUT = Reutilización</span>
                 <span class="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-1 rounded">● DESC = Descarte</span>
-                <span class="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">● VENTA = Venta POS</span>
+                <span class="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">● VENTA = Registrado automático desde POS</span>
             </div>
             <div id="contenedor-historial" class="space-y-2"></div>
         </div>
