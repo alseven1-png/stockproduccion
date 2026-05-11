@@ -33,8 +33,11 @@
         let productosGlobal = []; 
         let operariosGlobal = [];
         let movimientosGlobal = []; 
-        let isAdminUnlocked = false; 
-        let modoHistorial = 'cronologico'; 
+        let isAdminUnlocked = false;
+        let modoHistorial = 'cronologico';
+        let operarioActual = null;
+        let operariosPines = [];
+        let _pinOpVal = '';
 
         // ─── CATEGORÍAS ────────────────────────────────────────────────────────────
         // Las 3 fijas nunca se tocan en Firebase (mismos doc IDs de siempre).
@@ -123,15 +126,17 @@
                     if (csv) productosGlobal.push(...procesarProductosCSV(csv, key));
                 }
 
-                // 3. Operarios (sin cambios)
-                const docOp = await db.collection(COLL_CONFIG).doc("operarios_lista").get();
-                let txtOp = "Mañana\nTarde\nNoche";
-                if (docOp.exists) txtOp = docOp.data().lista;
-                else await db.collection(COLL_CONFIG).doc("operarios_lista").set({ lista: txtOp });
-                const opEl = document.getElementById('config-operarios');
-                if(opEl) opEl.value = txtOp; 
-                operariosGlobal = txtOp.split('\n').map(s => s.trim()).filter(s => s.length > 0);
-                llenarSelectOperarios();
+                // 3. Operarios con PIN
+                const docPines = await db.collection(COLL_CONFIG).doc("operarios_pines").get();
+                if(docPines.exists){
+                    operariosPines = docPines.data().lista || [];
+                } else {
+                    const docOp = await db.collection(COLL_CONFIG).doc("operarios_lista").get();
+                    const txtOp = docOp.exists ? docOp.data().lista : "Turno Mañana\nTurno Tarde\nTurno Noche";
+                    operariosPines = txtOp.split('\n').map(s=>s.trim()).filter(s=>s).map(n=>({nombre:n,pin:''}));
+                }
+                operariosGlobal = operariosPines.map(o => o.nombre);
+                renderizarTablaOperariosPines();
 
                 // 4. Renderizar secciones dinámicas en Config
                 renderizarSeccionesConfig(catsExtra);
@@ -534,19 +539,17 @@
 
             const prodId = document.getElementById('producto').value;
             const prod = productosGlobal.find(p => p.id === prodId);
-            const tipo = document.getElementById('tipo').value; 
+            const tipo = document.getElementById('tipo').value;
             const formato = document.getElementById('formato').value;
             const cantidad = parseFloat(document.getElementById('cantidad').value);
-            const operario = document.getElementById('operario').value;
             const fecha = document.getElementById('fecha').value;
+
+            if(!operarioActual){ btn.disabled=false; btn.innerText="CONFIRMAR CARGA"; return alert("Sesión cerrada. Volvé a identificarte."); }
+            const operario = operarioActual.nombre;
 
             if(!prod || isNaN(cantidad) || cantidad <= 0) {
                 btn.disabled=false; btn.innerText="CONFIRMAR CARGA";
                 return alert("Datos inválidos.");
-            }
-            if(!operario){
-                btn.disabled=false; btn.innerText="CONFIRMAR CARGA";
-                return alert("Seleccioná tu nombre antes de registrar.");
             }
 
             let cantBase = cantidad;
@@ -571,8 +574,7 @@
                 mostrarToast("Movimiento registrado");
                 e.target.reset();
                 establecerInputs();
-                actualizarFormato(); 
-                document.getElementById('operario').value = operario; 
+                actualizarFormato();
             }).catch((err) => { alert("Error: " + err.message); }).finally(() => {
                 btn.disabled = false; btn.innerText = "CONFIRMAR CARGA";
             });
@@ -767,6 +769,89 @@
             }
         }
 
+        // ─── LOGIN OPERARIO ────────────────────────────────────────────────────────
+        function abrirLoginOperario(){
+            _pinOpVal = '';
+            actualizarDisplayPin();
+            const sel = document.getElementById('op-login-nombre');
+            const conPin = operariosPines.filter(o => o.pin);
+            if(!conPin.length){ mostrarToast('No hay operarios con PIN. Configurar en Admin.'); return; }
+            sel.innerHTML = conPin.map(o=>`<option value="${o.nombre}">${o.nombre}</option>`).join('');
+            const pad = document.getElementById('op-pin-pad');
+            pad.innerHTML = [1,2,3,4,5,6,7,8,9,'⌫',0,''].map(k =>
+                k==='' ? '<div></div>' :
+                `<button type="button" onclick="pinOp('${k}')"
+                    class="py-4 rounded-xl text-xl font-bold transition active:scale-95 ${k==='⌫'?'bg-red-50 text-red-500 hover:bg-red-100':'bg-gray-100 hover:bg-amber-100 text-gray-800'}">${k}</button>`
+            ).join('');
+            document.getElementById('m-login-op').classList.remove('hidden');
+        }
+
+        window.pinOp = function(k){
+            if(k==='⌫'){ _pinOpVal=_pinOpVal.slice(0,-1); actualizarDisplayPin(); return; }
+            if(_pinOpVal.length >= 4) return;
+            _pinOpVal += k;
+            actualizarDisplayPin();
+            if(_pinOpVal.length === 4) setTimeout(confirmarLoginOperario, 150);
+        }
+
+        function actualizarDisplayPin(){
+            const dots = document.getElementById('op-pin-dots');
+            if(!dots) return;
+            dots.innerHTML = [0,1,2,3].map(i=>
+                `<div class="w-5 h-5 rounded-full border-2 transition-all ${i<_pinOpVal.length?'bg-amber-600 border-amber-600 scale-110':'border-gray-300'}"></div>`
+            ).join('');
+        }
+
+        function confirmarLoginOperario(){
+            const nombre = document.getElementById('op-login-nombre').value;
+            const op = operariosPines.find(o=>o.nombre===nombre);
+            if(!op){ mostrarToast('Operario no encontrado'); _pinOpVal=''; actualizarDisplayPin(); return; }
+            if(!op.pin){ mostrarToast('PIN no configurado. Contactá al administrador.'); _pinOpVal=''; actualizarDisplayPin(); return; }
+            if(_pinOpVal !== op.pin){
+                mostrarToast('PIN incorrecto ✗');
+                const dots = document.getElementById('op-pin-dots');
+                dots.classList.add('shake-err');
+                setTimeout(()=>dots.classList.remove('shake-err'), 500);
+                _pinOpVal=''; actualizarDisplayPin(); return;
+            }
+            operarioActual = op;
+            document.getElementById('m-login-op').classList.add('hidden');
+            cambiarVista('vista-carga');
+        }
+
+        window.cerrarSesionOperario = function(){
+            operarioActual = null;
+            cambiarVista('vista-panel');
+        }
+
+        function renderizarTablaOperariosPines(){
+            const cont = document.getElementById('tabla-operarios-pines');
+            if(!cont) return;
+            cont.innerHTML = operariosPines.map((op,i)=>`
+                <div class="flex items-center gap-2 bg-gray-50 border rounded-lg p-2">
+                    <input class="flex-1 bg-white border rounded px-2 py-1.5 text-xs font-bold focus:ring-1 focus:ring-amber-400 outline-none"
+                        value="${op.nombre}" oninput="operariosPines[${i}].nombre=this.value" placeholder="Nombre operario">
+                    <input type="password" maxlength="4" inputmode="numeric"
+                        class="w-20 bg-white border rounded px-2 py-1.5 text-xs text-center font-mono tracking-widest focus:ring-1 focus:ring-amber-400 outline-none"
+                        value="${op.pin}" oninput="operariosPines[${i}].pin=this.value.replace(/\\D/g,'')" placeholder="PIN">
+                    <button type="button" onclick="eliminarOperarioPines(${i})" class="text-red-400 hover:text-red-600 p-1">
+                        <i class="fas fa-trash-alt text-xs"></i>
+                    </button>
+                </div>`).join('');
+        }
+
+        window.agregarOperarioPines = function(){
+            operariosPines.push({nombre:'',pin:''});
+            renderizarTablaOperariosPines();
+        }
+
+        window.eliminarOperarioPines = function(i){
+            if(!confirm('¿Eliminar este operario?')) return;
+            operariosPines.splice(i,1);
+            renderizarTablaOperariosPines();
+        }
+        // ───────────────────────────────────────────────────────────────────────────
+
         function verificarAdmin() {
             if (isAdminUnlocked) return true;
             if (prompt("Contraseña Administrador:") === CLAVE_ADMIN) {
@@ -779,6 +864,7 @@
 
         window.cambiarVista = function(id) {
             if (id === 'vista-config' && !verificarAdmin()) return;
+            if (id === 'vista-carga' && !operarioActual) { abrirLoginOperario(); return; }
             const btnConf = document.getElementById('btn-vista-config');
             if(isAdminUnlocked && btnConf) {
                  btnConf.innerHTML = '<i class="fas fa-unlock block mb-1 text-lg"></i>Admin';
@@ -791,9 +877,9 @@
                 b.classList.add('border-transparent','text-amber-100');
             });
             document.getElementById('btn-' + id).classList.add('border-amber-300','text-white');
-            if(id === 'vista-panel') actualizarPanelPrincipal(); 
-            if(id === 'vista-carga') filtrarProductos(ORDEN_CATEGORIAS[0]); 
-            if(id === 'vista-historial') actualizarHistorialVisual(); 
+            if(id === 'vista-panel') actualizarPanelPrincipal();
+            if(id === 'vista-carga'){ filtrarProductos(ORDEN_CATEGORIAS[0]); document.getElementById('op-sesion-nombre').textContent = operarioActual.nombre; }
+            if(id === 'vista-historial') actualizarHistorialVisual();
         }
         
         window.guardarConfiguracion = async function() {
@@ -815,8 +901,8 @@
                         ultima_actualizacion: new Date().toISOString()
                     });
                 }
-                const ops = document.getElementById('config-operarios').value;
-                await db.collection(COLL_CONFIG).doc("operarios_lista").set({ lista: ops });
+                await db.collection(COLL_CONFIG).doc("operarios_pines").set({ lista: operariosPines });
+                operariosGlobal = operariosPines.map(o=>o.nombre);
                 await cargarConfiguracionGeneral();
                 alert("✅ Guardado y Sincronizado correctamente.");
             } catch(e) { alert("Error: " + e.message); } 
@@ -985,8 +1071,14 @@
                     </div>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Operario / Turno</label>
-                            <select id="operario" required class="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-amber-500 outline-none text-sm"></select>
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Operario</label>
+                            <div class="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-lg px-3 py-3">
+                                <div class="flex items-center gap-2">
+                                    <i class="fas fa-user-check text-amber-600 text-sm"></i>
+                                    <span class="text-sm font-bold text-amber-800" id="op-sesion-nombre">—</span>
+                                </div>
+                                <button type="button" onclick="cerrarSesionOperario()" class="text-xs text-amber-500 hover:text-amber-700 font-bold underline">Cambiar</button>
+                            </div>
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Fecha y Hora</label>
@@ -1045,8 +1137,12 @@
                     </div>
                     <div class="space-y-6">
                         <div>
-                            <h3 class="font-bold text-xs uppercase text-gray-400 mb-2">Operarios (Uno por línea)</h3>
-                            <textarea id="config-operarios" rows="4" class="w-full p-2 bg-gray-50 border rounded font-mono text-xs"></textarea>
+                            <h3 class="font-bold text-xs uppercase text-gray-400 mb-2">Operarios y PINs <span class="text-gray-300 font-normal normal-case">(Nombre + PIN 4 dígitos)</span></h3>
+                            <div id="tabla-operarios-pines" class="space-y-2 mb-2"></div>
+                            <button type="button" onclick="agregarOperarioPines()"
+                                class="w-full border-2 border-dashed border-amber-300 text-amber-600 hover:bg-amber-50 font-bold py-2 rounded-lg text-xs transition flex items-center justify-center gap-2">
+                                <i class="fas fa-plus-circle"></i> Agregar operario
+                            </button>
                         </div>
                         <div class="bg-red-50 p-4 rounded-xl border border-red-100">
                             <h3 class="text-red-700 font-bold text-sm mb-2">Zona de Peligro</h3>
@@ -1066,6 +1162,33 @@
             </div>
         </div>
     </main>
+
+    <!-- Modal Login Operario -->
+    <div id="m-login-op" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-xs p-6">
+            <div class="text-center mb-5">
+                <div class="w-14 h-14 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <i class="fas fa-user-lock text-amber-600 text-2xl"></i>
+                </div>
+                <h2 class="font-bold text-gray-800 text-lg">Identificate</h2>
+                <p class="text-xs text-gray-400 mt-1">Seleccioná tu nombre e ingresá tu PIN</p>
+            </div>
+            <select id="op-login-nombre" class="w-full p-3 bg-gray-50 border rounded-lg text-sm font-bold mb-5 outline-none focus:ring-2 focus:ring-amber-500"></select>
+            <div class="flex justify-center gap-4 mb-5" id="op-pin-dots">
+                <div class="w-5 h-5 rounded-full border-2 border-gray-300"></div>
+                <div class="w-5 h-5 rounded-full border-2 border-gray-300"></div>
+                <div class="w-5 h-5 rounded-full border-2 border-gray-300"></div>
+                <div class="w-5 h-5 rounded-full border-2 border-gray-300"></div>
+            </div>
+            <div class="grid grid-cols-3 gap-2" id="op-pin-pad"></div>
+            <button type="button" onclick="document.getElementById('m-login-op').classList.add('hidden')"
+                class="w-full mt-4 py-2 text-xs text-gray-400 hover:text-gray-600 transition">Cancelar</button>
+        </div>
+    </div>
+    <style>
+        @keyframes shake { 0%,100%{transform:translateX(0)} 20%,60%{transform:translateX(-6px)} 40%,80%{transform:translateX(6px)} }
+        .shake-err { animation: shake 0.4s ease; }
+    </style>
 
     <nav class="fixed bottom-0 w-full bg-white border-t border-gray-200 flex justify-around py-2 sm:hidden z-30 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
         <button onclick="cambiarVista('vista-panel')" class="flex flex-col items-center gap-1 text-gray-400 focus:text-amber-700">
