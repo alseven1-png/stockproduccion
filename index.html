@@ -32,8 +32,6 @@
         };
 
         firebase.initializeApp(firebaseConfig);
-        // App Check SÓLO en staging por ahora: probamos github.io contra panpos-staging sin tocar prod
-        if(_esStaging){ try{ firebase.appCheck().activate('6LfYxwwtAAAAAF8UdV98mwNt6dIEO2sS9f1aLnoj', true); }catch(e){ console.error('AppCheck:',e); } }
         const db = firebase.firestore();
         const auth = firebase.auth();
         
@@ -931,6 +929,8 @@
         }
 
         document.addEventListener('DOMContentLoaded', () => {
+            // App Check SÓLO en staging por ahora. Va acá (no en el <head>): reCAPTCHA necesita que el <body> exista.
+            if(_esStaging){ try{ firebase.appCheck().activate('6LfYxwwtAAAAAF8UdV98mwNt6dIEO2sS9f1aLnoj', true); }catch(e){ console.error('AppCheck:',e); } }
             auth.signInAnonymously().catch(e => console.error(e));
             auth.onAuthStateChanged(user => {
                 if (user) {
