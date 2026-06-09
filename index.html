@@ -16,15 +16,20 @@
     <script>
         const CLAVE_ADMIN = "2550LP"; 
         
+        // Backend por entorno: ?env=staging o localhost -> panpos-staging; resto -> producción
+        const FB_PROD    = { apiKey:"AIzaSyBKV1mVfhFZJgeZRu6FHgz-2_KVrKDlHoc", projectId:"mercaderia-f1699", messagingSenderId:"230493635490", appId:"1:230493635490:web:f4b780864dbc64eebda8fb" };
+        const FB_STAGING = { apiKey:"AIzaSyAz8FYef7OQhJCMfem2GmFN51BTY96NRz0", projectId:"panpos-staging", messagingSenderId:"3751040049", appId:"1:3751040049:web:4b2c5e000a715543503110" };
+        const _esStaging = new URLSearchParams(location.search).get('env')==='staging' || ['localhost','127.0.0.1',''].includes(location.hostname);
+        const E = _esStaging ? FB_STAGING : FB_PROD;
         const firebaseConfig = {
-            apiKey: "AIzaSyBKV1mVfhFZJgeZRu6FHgz-2_KVrKDlHoc",
-            authDomain: "mercaderia-f1699.firebaseapp.com",
-            projectId: "mercaderia-f1699",
-            storageBucket: "mercaderia-f1699.firebasestorage.app",
-            messagingSenderId: "230493635490",
-            appId: "1:230493635490:web:f4b780864dbc64eebda8fb"
+            apiKey: E.apiKey,
+            authDomain: `${E.projectId}.firebaseapp.com`,
+            projectId: E.projectId,
+            storageBucket: `${E.projectId}.firebasestorage.app`,
+            messagingSenderId: E.messagingSenderId,
+            appId: E.appId
         };
-        
+
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
         const auth = firebase.auth();
