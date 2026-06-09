@@ -12,6 +12,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-check-compat.js"></script>
 
     <script>
         // ============================================================
@@ -29,6 +30,7 @@
         };
         
         firebase.initializeApp(firebaseConfig);
+        try{ firebase.appCheck().activate('6LdDuA4tAAAAAHasxpUq_gF8PmwCMMZJwtSau-BT', true); }catch(e){ console.error('AppCheck:',e); }
         const db = firebase.firestore();
         const auth = firebase.auth();
         
