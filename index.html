@@ -929,8 +929,9 @@
         }
 
         document.addEventListener('DOMContentLoaded', () => {
-            // App Check SÓLO en staging por ahora. Va acá (no en el <head>): reCAPTCHA necesita que el <body> exista.
-            if(_esStaging){ try{ firebase.appCheck().activate('6LfYxwwtAAAAAF8UdV98mwNt6dIEO2sS9f1aLnoj', true); }catch(e){ console.error('AppCheck:',e); } }
+            // App Check en staging y prod (modo monitoreo). Va acá (no en el <head>): reCAPTCHA necesita que el <body> exista.
+            const _appCheckKey = _esStaging ? '6LfYxwwtAAAAAF8UdV98mwNt6dIEO2sS9f1aLnoj' : '6LdDuA4tAAAAAHasxpUq_gF8PmwCMMZJwtSau-BT';
+            try{ firebase.appCheck().activate(_appCheckKey, true); }catch(e){ console.error('AppCheck:',e); }
             auth.signInAnonymously().catch(e => console.error(e));
             auth.onAuthStateChanged(user => {
                 if (user) {
