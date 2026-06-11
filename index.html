@@ -45,6 +45,32 @@
         let operariosPines = [];
         let _pinOpVal = '';
 
+        // ── Blindaje Fase 2: login real por PIN (Cloud Function `login`) ──
+        // Login-first: en entornos con `login` deployada NO se entra anónimo; la sesión
+        // se crea al validar el PIN. En prod (sin `login` aún) queda el flujo viejo intacto.
+        const LOGIN_URL = { 'panpos-staging':'https://login-m5cy3sdeia-uc.a.run.app', 'mercaderia-f1699':'' };
+        const LOGIN_FIRST = !!LOGIN_URL[E.projectId];
+
+        async function loginPIN(pin){
+            const url = LOGIN_URL[E.projectId];
+            if(!url){
+                const op = operariosPines.find(o => o.pin === pin);
+                return op ? { ok:true, nombre:op.nombre, rol:'operario' } : { ok:false, msg:'PIN incorrecto' };
+            }
+            let acTok=''; try{ acTok=(await firebase.appCheck().getToken()).token; }catch(_){}
+            let dev=localStorage.getItem('sp_devId'); if(!dev){ dev='d'+Date.now().toString(36)+Math.random().toString(36).slice(2,8); localStorage.setItem('sp_devId',dev); }
+            try{
+                const resp = await fetch(url, { method:'POST',
+                    headers:{ 'Content-Type':'application/json', ...(acTok?{'X-Firebase-AppCheck':acTok}:{}) },
+                    body:JSON.stringify({ pin, deviceId:dev }) });
+                const j = await resp.json();
+                if(j.ok){ await auth.signInWithCustomToken(j.token); return { ok:true, nombre:j.nombre, rol:j.rol }; }
+                if(j.error==='bloqueado')    return { ok:false, msg:`Bloqueado, reintentá en ${j.minutos} min` };
+                if(j.error==='pin_invalido') return { ok:false, msg:`PIN incorrecto (${j.restantes} restantes)` };
+                return { ok:false, msg:'No se pudo verificar' };
+            }catch(e){ return { ok:false, msg:'Sin conexión' }; }
+        }
+
         // ─── CATEGORÍAS ────────────────────────────────────────────────────────────
         // Las 3 fijas nunca se tocan en Firebase (mismos doc IDs de siempre).
         // Las extras se guardan en UN ÚNICO doc separado: "categorias_extra"
@@ -778,51 +804,61 @@
         // ─── LOGIN OPERARIO ────────────────────────────────────────────────────────
         function abrirLoginOperario(){
             _pinOpVal = '';
+            const _e=document.getElementById('op-login-err'); if(_e) _e.textContent='';
             actualizarDisplayPin();
             const sel = document.getElementById('op-login-nombre');
-            const conPin = operariosPines.filter(o => o.pin);
-            if(!conPin.length){ mostrarToast('No hay operarios con PIN. Configurar en Admin.'); return; }
-            sel.innerHTML = conPin.map(o=>`<option value="${o.nombre}">${o.nombre}</option>`).join('');
+            const sub = document.getElementById('op-login-sub');
+            if(sub) sub.textContent = LOGIN_FIRST ? 'Ingresá tu PIN' : 'Seleccioná tu nombre e ingresá tu PIN';
+            if(LOGIN_FIRST){ if(sel) sel.classList.add('hidden'); }
+            else {
+                const conPin = operariosPines.filter(o => o.pin);
+                if(!conPin.length){ mostrarToast('No hay operarios con PIN. Configurar en Admin.'); return; }
+                if(sel){ sel.classList.remove('hidden'); sel.innerHTML = conPin.map(o=>`<option value="${o.nombre}">${o.nombre}</option>`).join(''); }
+            }
+            const cancel = document.getElementById('op-login-cancel'); if(cancel) cancel.style.display = LOGIN_FIRST ? 'none' : '';
             const pad = document.getElementById('op-pin-pad');
-            pad.innerHTML = [1,2,3,4,5,6,7,8,9,'⌫',0,''].map(k =>
-                k==='' ? '<div></div>' :
+            pad.innerHTML = [1,2,3,4,5,6,7,8,9,'⌫',0,'OK'].map(k =>
                 `<button type="button" onclick="pinOp('${k}')"
-                    class="py-4 rounded-xl text-xl font-bold transition active:scale-95 ${k==='⌫'?'bg-red-50 text-red-500 hover:bg-red-100':'bg-gray-100 hover:bg-amber-100 text-gray-800'}">${k}</button>`
+                    class="py-4 rounded-xl text-xl font-bold transition active:scale-95 ${k==='⌫'?'bg-red-50 text-red-500 hover:bg-red-100':k==='OK'?'bg-amber-600 text-white hover:bg-amber-700':'bg-gray-100 hover:bg-amber-100 text-gray-800'}">${k}</button>`
             ).join('');
             document.getElementById('m-login-op').classList.remove('hidden');
         }
 
         window.pinOp = function(k){
             if(k==='⌫'){ _pinOpVal=_pinOpVal.slice(0,-1); actualizarDisplayPin(); return; }
-            if(_pinOpVal.length >= 4) return;
+            if(k==='OK'){ confirmarLoginOperario(); return; }
+            if(_pinOpVal.length >= 6) return;
             _pinOpVal += k;
+            const _e=document.getElementById('op-login-err'); if(_e) _e.textContent='';
             actualizarDisplayPin();
-            if(_pinOpVal.length === 4) setTimeout(confirmarLoginOperario, 150);
+            if(!LOGIN_FIRST && _pinOpVal.length === 4) setTimeout(confirmarLoginOperario, 150);
         }
 
         function actualizarDisplayPin(){
             const dots = document.getElementById('op-pin-dots');
             if(!dots) return;
-            dots.innerHTML = [0,1,2,3].map(i=>
-                `<div class="w-5 h-5 rounded-full border-2 transition-all ${i<_pinOpVal.length?'bg-amber-600 border-amber-600 scale-110':'border-gray-300'}"></div>`
+            const n = _pinOpVal.length;
+            dots.innerHTML = Array.from({length: Math.max(n,4)}).map((_,i)=>
+                `<div class="w-5 h-5 rounded-full border-2 transition-all ${i<n?'bg-amber-600 border-amber-600 scale-110':'border-gray-300'}"></div>`
             ).join('');
         }
 
-        function confirmarLoginOperario(){
-            const nombre = document.getElementById('op-login-nombre').value;
-            const op = operariosPines.find(o=>o.nombre===nombre);
-            if(!op){ mostrarToast('Operario no encontrado'); _pinOpVal=''; actualizarDisplayPin(); return; }
-            if(!op.pin){ mostrarToast('PIN no configurado. Contactá al administrador.'); _pinOpVal=''; actualizarDisplayPin(); return; }
-            if(_pinOpVal !== op.pin){
-                mostrarToast('PIN incorrecto ✗');
+        async function confirmarLoginOperario(){
+            const nombreSel = document.getElementById('op-login-nombre').value;
+            const r = await loginPIN(_pinOpVal);
+            if(!r.ok){
+                const errEl = document.getElementById('op-login-err');
+                if(errEl) errEl.textContent = r.msg || 'PIN incorrecto';
                 const dots = document.getElementById('op-pin-dots');
                 dots.classList.add('shake-err');
                 setTimeout(()=>dots.classList.remove('shake-err'), 500);
                 _pinOpVal=''; actualizarDisplayPin(); return;
             }
-            operarioActual = op;
+            operarioActual = { nombre: r.nombre || nombreSel, rol: r.rol };
+            if(r.rol === 'admin') isAdminUnlocked = true;
+            _pinOpVal='';
             document.getElementById('m-login-op').classList.add('hidden');
-            cambiarVista('vista-carga');
+            if(!LOGIN_FIRST) cambiarVista('vista-carga');
         }
 
         window.cerrarSesionOperario = function(){
@@ -860,6 +896,7 @@
 
         function verificarAdmin() {
             if (isAdminUnlocked) return true;
+            if (LOGIN_FIRST) { mostrarToast('Necesitás iniciar sesión como administrador'); return false; }
             if (prompt("Contraseña Administrador:") === CLAVE_ADMIN) {
                 isAdminUnlocked = true;
                 actualizarHistorialVisual();
@@ -932,7 +969,6 @@
             // App Check en staging y prod (modo monitoreo). Va acá (no en el <head>): reCAPTCHA necesita que el <body> exista.
             const _appCheckKey = _esStaging ? '6LfYxwwtAAAAAF8UdV98mwNt6dIEO2sS9f1aLnoj' : '6LdDuA4tAAAAAHasxpUq_gF8PmwCMMZJwtSau-BT';
             try{ firebase.appCheck().activate(_appCheckKey, true); }catch(e){ console.error('AppCheck:',e); }
-            auth.signInAnonymously().catch(e => console.error(e));
             auth.onAuthStateChanged(user => {
                 if (user) {
                     currentUser = user;
@@ -944,6 +980,7 @@
                     });
                 }
             });
+            if(LOGIN_FIRST){ abrirLoginOperario(); } else { auth.signInAnonymously().catch(e => console.error(e)); }
             establecerInputs();
         });
     </script>
@@ -1180,7 +1217,7 @@
                     <i class="fas fa-user-lock text-amber-600 text-2xl"></i>
                 </div>
                 <h2 class="font-bold text-gray-800 text-lg">Identificate</h2>
-                <p class="text-xs text-gray-400 mt-1">Seleccioná tu nombre e ingresá tu PIN</p>
+                <p id="op-login-sub" class="text-xs text-gray-400 mt-1">Seleccioná tu nombre e ingresá tu PIN</p>
             </div>
             <select id="op-login-nombre" class="w-full p-3 bg-gray-50 border rounded-lg text-sm font-bold mb-5 outline-none focus:ring-2 focus:ring-amber-500"></select>
             <div class="flex justify-center gap-4 mb-5" id="op-pin-dots">
@@ -1189,8 +1226,9 @@
                 <div class="w-5 h-5 rounded-full border-2 border-gray-300"></div>
                 <div class="w-5 h-5 rounded-full border-2 border-gray-300"></div>
             </div>
+            <p id="op-login-err" class="text-center text-xs font-bold text-red-500 h-4 mb-2"></p>
             <div class="grid grid-cols-3 gap-2" id="op-pin-pad"></div>
-            <button type="button" onclick="document.getElementById('m-login-op').classList.add('hidden')"
+            <button type="button" id="op-login-cancel" onclick="document.getElementById('m-login-op').classList.add('hidden')"
                 class="w-full mt-4 py-2 text-xs text-gray-400 hover:text-gray-600 transition">Cancelar</button>
         </div>
     </div>
