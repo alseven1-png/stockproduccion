@@ -938,9 +938,31 @@
                     if (!el) continue;
                     const val = el.value;
                     const listaLimpia = procesarProductosCSV(val, key);
-                    await db.collection(COLL_CONFIG).doc(`productos_${key}`).set({ 
+                    // Blindaje: preservar por NOMBRE los campos del POS (precio/alicuota/componentes/stockInicial)
+                    // y la identidad (id). El control reescribe json_data desde su CSV, que no los tiene;
+                    // sin esto se borrarían. El id se preserva para no romper movimientos/stock del POS, y a
+                    // los productos NUEVOS se les da un id por slug (estable y unico), no por indice (que se
+                    // corre o duplica al insertar/dividir productos — causa del incidente de pasteleria).
+                    const slugId = (nombre) => `${key}_` + (nombre||'').toLowerCase()
+                        .normalize('NFD').replace(/[̀-ͯ]/g,'')
+                        .replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+                    const docRef = db.collection(COLL_CONFIG).doc(`productos_${key}`);
+                    const snap = await docRef.get();
+                    const previos = (snap.exists && Array.isArray(snap.data().json_data)) ? snap.data().json_data : [];
+                    const mapaPrev = {};
+                    previos.forEach(p => { if (p && p.nombre) mapaPrev[p.nombre.trim().toLowerCase()] = p; });
+                    const listaFinal = listaLimpia.map(p => {
+                        const prev = mapaPrev[(p.nombre||'').trim().toLowerCase()];
+                        if (!prev) return { ...p, id: slugId(p.nombre) };
+                        const m = { ...p };
+                        ['precio','alicuota','componentes','stockInicial','id'].forEach(c => {
+                            if (prev[c] !== undefined) m[c] = prev[c];
+                        });
+                        return m;
+                    });
+                    await docRef.set({
                         csv: val,
-                        json_data: listaLimpia,
+                        json_data: listaFinal,
                         ultima_actualizacion: new Date().toISOString()
                     });
                 }
