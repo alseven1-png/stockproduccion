@@ -115,10 +115,10 @@
         function procesarProductosCSV(csvText, categoria) {
             return csvText.split('\n').map(l => l.trim()).filter(l => l.length > 0).map((l, i) => {
                 const p = l.split('|').map(s => s.trim());
-                return { 
-                    id: `${categoria}_${i}`, 
+                return {
+                    id: `${categoria}_` + (p[0]||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,''),
                     categoria: categoria,
-                    nombre: p[0], 
+                    nombre: p[0],
                     unidad: p[1] || 'Unidad', 
                     alterno: p[2] || '-', 
                     factor: parseFloat(p[3]) || 1, 
@@ -308,39 +308,45 @@
         }
 
         async function calcularStockAcumulado() {
-            // Buscar el último cierre de stock
-            const snap = await db.collection('cierres_stock')
-                .orderBy('fecha', 'desc').limit(1).get();
-
-            const stockBase = {};
-            let fechaDesde = null;
-
-            if (!snap.empty) {
-                const cierre = snap.docs[0].data();
-                fechaDesde = cierre.fecha + 'T00:00';
-                // El stock base es el del último cierre
-                Object.entries(cierre.stock || {}).forEach(([id, val]) => {
-                    stockBase[id] = val;
-                });
+            // Ancla ÚNICA compartida con el POS: stock = cierres_caja.stock_cierre (último cierre
+            // de caja) + movimientos POSTERIORES al cierre. Misma fórmula y mismo corte que
+            // loadStockHoy del POS, para que las dos pantallas den IDENTICO. Se deprecan
+            // cierres_stock y stockInicial como fuente de stock.
+            const cierresSnap = await db.collection('cierres_caja').get();
+            const validos = cierresSnap.docs.map(d => d.data())
+                .filter(d => d.stock_cierre && Object.keys(d.stock_cierre).length > 0);
+            let ancla = {}, corteFecha = '', corteTs = NaN, corteDia = '';
+            if (validos.length) {
+                validos.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+                const top = validos[0];
+                ancla = top.stock_cierre || {};
+                corteFecha = (top.timestamp || '').slice(0, 16);
+                corteTs = Date.parse(top.timestamp || '');
+                corteDia = top.fecha_dia || corteFecha.slice(0, 10);
             }
 
-            // Stock inicial de productos para los que no hay cierre
-            productosGlobal.forEach(p => {
-                if (stockBase[p.id] === undefined) stockBase[p.id] = p.stockInicial || 0;
-            });
+            const stockBase = {};
+            productosGlobal.forEach(p => { stockBase[p.id] = parseFloat(ancla[p.id]) || 0; });
 
-            // Sumar movimientos desde el último cierre (o todos si no hay cierre)
             let query = db.collection(COLL_MOVIMIENTOS).orderBy('fecha', 'asc');
-            if (fechaDesde) query = query.where('fecha', '>=', fechaDesde);
+            if (corteDia) query = query.where('fecha', '>=', corteDia);
             const movSnap = await query.get();
 
             movSnap.forEach(doc => {
                 const m = doc.data();
-                if (stockBase[m.productoId] === undefined) stockBase[m.productoId] = 0;
-                if (m.tipo === 'ENTRADA') {
-                    stockBase[m.productoId] += Math.abs(m.cantidadBase || 0);
+                const pid = m.productoId; if (!pid) return;
+                const mts = Date.parse(m.timestamp || '');
+                if (!isNaN(corteTs) && !isNaN(mts)) {
+                    if (mts <= corteTs) return;
                 } else {
-                    stockBase[m.productoId] -= Math.abs(m.cantidadBase || 0);
+                    const mf = (m.fecha || '').replace(' ', 'T');
+                    if (corteFecha && mf <= corteFecha) return;
+                }
+                if (stockBase[pid] === undefined) stockBase[pid] = 0;
+                if (m.tipo === 'ENTRADA') {
+                    stockBase[pid] += Math.abs(m.cantidadBase || 0);
+                } else {
+                    stockBase[pid] -= Math.abs(m.cantidadBase || 0);
                 }
             });
 
