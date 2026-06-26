@@ -307,6 +307,13 @@
             }
         }
 
+        // Frescos (Opcion A): mismo criterio que el POS. No arrastran sobrante (no usan ancla) y
+        // la REUTILIZACION/SOBRANTE del sobrante de ayer no descuenta del stock del dia.
+        const FRESCOS = new Set([
+            'panaderia_pan-frances-kg','panaderia_panini-kg','panaderia_biscochitos-libritos',
+            'panaderia_chipa-kg','panaderia_factura-unidad','panaderia_sacramentos-unid','panaderia_cremona-unid'
+        ]);
+
         async function calcularStockAcumulado() {
             // Ancla ÚNICA compartida con el POS: stock = cierres_caja.stock_cierre (último cierre
             // de caja) + movimientos POSTERIORES al cierre. Misma fórmula y mismo corte que
@@ -326,7 +333,7 @@
             }
 
             const stockBase = {};
-            productosGlobal.forEach(p => { stockBase[p.id] = parseFloat(ancla[p.id]) || 0; });
+            productosGlobal.forEach(p => { stockBase[p.id] = FRESCOS.has(p.id) ? 0 : (parseFloat(ancla[p.id]) || 0); });
 
             let query = db.collection(COLL_MOVIMIENTOS).orderBy('fecha', 'asc');
             if (corteDia) query = query.where('fecha', '>=', corteDia);
@@ -343,11 +350,16 @@
                     if (corteFecha && mf <= corteFecha) return;
                 }
                 if (stockBase[pid] === undefined) stockBase[pid] = 0;
+                if (FRESCOS.has(pid)) {
+                    if ((m.fecha || '').slice(0, 10) <= corteDia) return;
+                    if (m.tipo === 'REUTILIZACION' || m.tipo === 'SOBRANTE') return;
+                }
                 if (m.tipo === 'ENTRADA') {
                     stockBase[pid] += Math.abs(m.cantidadBase || 0);
                 } else {
                     stockBase[pid] -= Math.abs(m.cantidadBase || 0);
                 }
+
             });
 
             return stockBase;
