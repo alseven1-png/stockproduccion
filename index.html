@@ -4,7 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Control de Producción y Stock</title>
-    
+
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#075985">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="apple-mobile-web-app-title" content="Control de Producción">
+
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
@@ -471,7 +479,7 @@
             const kpiPorc = document.getElementById('kpi-porcentaje-merma');
             if(kpiPorc) {
                 kpiPorc.innerText = porcentaje.toFixed(1) + '%';
-                kpiPorc.className = "text-xl font-bold " + (porcentaje > 15 ? "text-red-600" : (porcentaje > 5 ? "text-amber-600" : "text-green-600"));
+                kpiPorc.className = "text-xl font-bold " + (porcentaje > 15 ? "text-red-600" : (porcentaje > 5 ? "text-sky-600" : "text-green-600"));
             }
 
             // FIX 2: Tabla con fila de TOTALES al final
@@ -534,7 +542,7 @@
                     const actual = stockAcum[p.id] !== undefined ? stockAcum[p.id] : (p.stockInicial || 0);
                     if (actual === 0 && !movimientosGlobal.some(m => m.productoId === p.id)) return;
                     hay = true;
-                    const borde = actual < 0 ? 'border-red-500' : (actual < 5 ? 'border-amber-400' : 'border-gray-200');
+                    const borde = actual < 0 ? 'border-red-500' : (actual < 5 ? 'border-sky-400' : 'border-gray-200');
                     grid.innerHTML += `
                         <div class="bg-white p-2 rounded border-l-4 ${borde} shadow-sm flex justify-between items-center">
                             <div class="overflow-hidden pr-2">
@@ -643,9 +651,9 @@
             if (!sel) return;
             sel.innerHTML = '<option value="" disabled selected>Seleccione producto...</option>';
             const filtrados = productosGlobal.filter(p => p.categoria === categoria);
-            document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('bg-amber-600','text-white','shadow-md'));
+            document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('bg-sky-600','text-white','shadow-md'));
             const btn = document.getElementById(`btn-cat-${categoria}`);
-            if (btn) btn.classList.add('bg-amber-600','text-white','shadow-md');
+            if (btn) btn.classList.add('bg-sky-600','text-white','shadow-md');
             filtrados.forEach(p => {
                 const opt = document.createElement('option');
                 opt.value = p.id; opt.text = p.nombre; sel.appendChild(opt);
@@ -808,9 +816,9 @@
 
                     div.innerHTML += `
                         <div class="bg-white border rounded-lg mb-3 overflow-hidden shadow-sm">
-                            <div class="bg-amber-800 px-3 py-2 flex justify-between items-center">
+                            <div class="bg-sky-800 px-3 py-2 flex justify-between items-center">
                                 <span class="font-bold text-white text-xs">${nombreProd}</span>
-                                <span class="text-[10px] bg-amber-600 text-white px-2 py-0.5 rounded-full">${movs.length} mov.</span>
+                                <span class="text-[10px] bg-sky-600 text-white px-2 py-0.5 rounded-full">${movs.length} mov.</span>
                             </div>
                             ${itemsHtml}
                             ${totalesHtml}
@@ -837,7 +845,7 @@
             const pad = document.getElementById('op-pin-pad');
             pad.innerHTML = [1,2,3,4,5,6,7,8,9,'⌫',0,'OK'].map(k =>
                 `<button type="button" onclick="pinOp('${k}')"
-                    class="py-4 rounded-xl text-xl font-bold transition active:scale-95 ${k==='⌫'?'bg-red-50 text-red-500 hover:bg-red-100':k==='OK'?'bg-amber-600 text-white hover:bg-amber-700':'bg-gray-100 hover:bg-amber-100 text-gray-800'}">${k}</button>`
+                    class="py-4 rounded-xl text-xl font-bold transition active:scale-95 ${k==='⌫'?'bg-red-50 text-red-500 hover:bg-red-100':k==='OK'?'bg-sky-600 text-white hover:bg-sky-700':'bg-gray-100 hover:bg-sky-100 text-gray-800'}">${k}</button>`
             ).join('');
             document.getElementById('m-login-op').classList.remove('hidden');
         }
@@ -857,7 +865,7 @@
             if(!dots) return;
             const n = _pinOpVal.length;
             dots.innerHTML = Array.from({length: Math.max(n,4)}).map((_,i)=>
-                `<div class="w-5 h-5 rounded-full border-2 transition-all ${i<n?'bg-amber-600 border-amber-600 scale-110':'border-gray-300'}"></div>`
+                `<div class="w-5 h-5 rounded-full border-2 transition-all ${i<n?'bg-sky-600 border-sky-600 scale-110':'border-gray-300'}"></div>`
             ).join('');
         }
 
@@ -889,10 +897,10 @@
             if(!cont) return;
             cont.innerHTML = operariosPines.map((op,i)=>`
                 <div class="flex items-center gap-2 bg-gray-50 border rounded-lg p-2">
-                    <input class="flex-1 bg-white border rounded px-2 py-1.5 text-xs font-bold focus:ring-1 focus:ring-amber-400 outline-none"
+                    <input class="flex-1 bg-white border rounded px-2 py-1.5 text-xs font-bold focus:ring-1 focus:ring-sky-400 outline-none"
                         value="${op.nombre}" oninput="operariosPines[${i}].nombre=this.value" placeholder="Nombre operario">
                     <input type="password" maxlength="4" inputmode="numeric"
-                        class="w-20 bg-white border rounded px-2 py-1.5 text-xs text-center font-mono tracking-widest focus:ring-1 focus:ring-amber-400 outline-none"
+                        class="w-20 bg-white border rounded px-2 py-1.5 text-xs text-center font-mono tracking-widest focus:ring-1 focus:ring-sky-400 outline-none"
                         value="${op.pin}" oninput="operariosPines[${i}].pin=this.value.replace(/\\D/g,'')" placeholder="PIN">
                     <button type="button" onclick="eliminarOperarioPines(${i})" class="text-red-400 hover:text-red-600 p-1">
                         <i class="fas fa-trash-alt text-xs"></i>
@@ -934,10 +942,10 @@
             document.querySelectorAll('.vista').forEach(d => d.classList.add('hidden'));
             document.getElementById(id).classList.remove('hidden');
             document.querySelectorAll('.nav-btn').forEach(b => {
-                b.classList.remove('border-amber-300','text-white');
-                b.classList.add('border-transparent','text-amber-100');
+                b.classList.remove('border-sky-300','text-white');
+                b.classList.add('border-transparent','text-sky-100');
             });
-            document.getElementById('btn-' + id).classList.add('border-amber-300','text-white');
+            document.getElementById('btn-' + id).classList.add('border-sky-300','text-white');
             if(id === 'vista-panel') actualizarPanelPrincipal();
             if(id === 'vista-carga'){ filtrarProductos(ORDEN_CATEGORIAS[0]); document.getElementById('op-sesion-nombre').textContent = operarioActual.nombre; }
             if(id === 'vista-historial') actualizarHistorialVisual();
@@ -1027,27 +1035,27 @@
 </head>
 <body class="bg-gray-100 h-screen flex flex-col overflow-hidden text-gray-800 font-sans">
 
-    <header class="bg-amber-800 text-white shadow-md flex-none z-20">
+    <header class="bg-sky-800 text-white shadow-md flex-none z-20">
         <div class="container mx-auto px-4 py-3 flex justify-between items-center">
             <div class="flex items-center gap-3">
-                <div class="bg-white p-2 rounded-full shadow-inner">
-                    <i class="fas fa-bread-slice text-amber-600 text-xl"></i>
+                <div class="bg-white p-1 rounded-full shadow-inner">
+                    <img src="icon-192.png" alt="Control de Producción" class="w-9 h-9 rounded-full">
                 </div>
                 <div>
-                    <h1 class="font-bold text-lg leading-tight tracking-tight">Control Producción</h1>
-                    <p class="text-[10px] text-amber-200 uppercase tracking-widest">Gestión Stock</p>
+                    <h1 class="font-bold text-lg leading-tight tracking-tight">Control de Producción</h1>
+                    <p class="text-[10px] text-sky-200 uppercase tracking-widest">Gestión de Stock</p>
                 </div>
             </div>
             <i id="status-icon" class="fas fa-circle text-red-500 text-xs"></i>
         </div>
     </header>
 
-    <div class="bg-amber-900 shadow-inner flex-none">
+    <div class="bg-sky-900 shadow-inner flex-none">
         <div class="container mx-auto flex">
-            <button id="btn-vista-panel" onclick="cambiarVista('vista-panel')" class="nav-btn flex-1 py-3 text-center border-b-4 border-amber-300 text-white font-bold text-xs sm:text-sm transition"><i class="fas fa-chart-pie block mb-1 text-lg"></i>Resumen</button>
-            <button id="btn-vista-carga" onclick="cambiarVista('vista-carga')" class="nav-btn flex-1 py-3 text-center border-b-4 border-transparent text-amber-100 font-medium text-xs sm:text-sm transition"><i class="fas fa-plus-circle block mb-1 text-lg"></i>Cargar</button>
-            <button id="btn-vista-historial" onclick="cambiarVista('vista-historial')" class="nav-btn flex-1 py-3 text-center border-b-4 border-transparent text-amber-100 font-medium text-xs sm:text-sm transition"><i class="fas fa-history block mb-1 text-lg"></i>Historial</button>
-            <button id="btn-vista-config" onclick="cambiarVista('vista-config')" class="nav-btn flex-1 py-3 text-center border-b-4 border-transparent text-amber-100 font-medium text-xs sm:text-sm transition"><i class="fas fa-lock block mb-1 text-lg"></i>Config</button>
+            <button id="btn-vista-panel" onclick="cambiarVista('vista-panel')" class="nav-btn flex-1 py-3 text-center border-b-4 border-sky-300 text-white font-bold text-xs sm:text-sm transition"><i class="fas fa-chart-pie block mb-1 text-lg"></i>Resumen</button>
+            <button id="btn-vista-carga" onclick="cambiarVista('vista-carga')" class="nav-btn flex-1 py-3 text-center border-b-4 border-transparent text-sky-100 font-medium text-xs sm:text-sm transition"><i class="fas fa-plus-circle block mb-1 text-lg"></i>Cargar</button>
+            <button id="btn-vista-historial" onclick="cambiarVista('vista-historial')" class="nav-btn flex-1 py-3 text-center border-b-4 border-transparent text-sky-100 font-medium text-xs sm:text-sm transition"><i class="fas fa-history block mb-1 text-lg"></i>Historial</button>
+            <button id="btn-vista-config" onclick="cambiarVista('vista-config')" class="nav-btn flex-1 py-3 text-center border-b-4 border-transparent text-sky-100 font-medium text-xs sm:text-sm transition"><i class="fas fa-lock block mb-1 text-lg"></i>Config</button>
         </div>
     </div>
 
@@ -1057,7 +1065,7 @@
         <div id="vista-panel" class="vista container mx-auto max-w-5xl space-y-4">
             <div class="bg-white p-3 rounded-lg shadow-sm border border-gray-200 flex justify-between items-center">
                 <div class="flex items-center gap-2">
-                    <i class="fas fa-calendar-alt text-amber-600"></i>
+                    <i class="fas fa-calendar-alt text-sky-600"></i>
                     <input type="date" id="filtro-fecha-panel" onchange="actualizarPanelPrincipal()" class="border-none font-bold text-gray-700 focus:ring-0 cursor-pointer">
                 </div>
                 <div class="text-right">
@@ -1088,7 +1096,7 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                     <div class="bg-gray-50 px-4 py-2 border-b border-gray-100 flex justify-between items-center">
-                        <h3 class="font-bold text-gray-700 text-sm">Detalle <span id="label-fecha-tabla" class="text-amber-700"></span></h3>
+                        <h3 class="font-bold text-gray-700 text-sm">Detalle <span id="label-fecha-tabla" class="text-sky-700"></span></h3>
                     </div>
                     <div class="overflow-x-auto">
                         <table class="w-full text-left">
@@ -1125,7 +1133,7 @@
         <!-- VISTA CARGA -->
         <div id="vista-carga" class="vista hidden container mx-auto max-w-2xl">
             <div class="bg-white rounded-2xl shadow-xl overflow-hidden">
-                <div class="bg-amber-800 p-4 text-white">
+                <div class="bg-sky-800 p-4 text-white">
                     <h2 class="text-lg font-bold flex items-center gap-2"><i class="fas fa-plus-circle"></i> Nueva Entrada de Mercadería</h2>
                 </div>
                 <!-- Botones de categoría: se generan dinámicamente -->
@@ -1134,11 +1142,11 @@
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                             <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Producto</label>
-                            <select id="producto" onchange="actualizarFormato()" required class="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-amber-500 outline-none text-sm"></select>
+                            <select id="producto" onchange="actualizarFormato()" required class="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-sky-500 outline-none text-sm"></select>
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Tipo de Movimiento</label>
-                            <select id="tipo" onchange="actualizarFormato()" class="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-amber-500 outline-none text-sm">
+                            <select id="tipo" onchange="actualizarFormato()" class="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-sky-500 outline-none text-sm">
                                 <option value="ENTRADA">PRODUCCIÓN (+)</option>
                                 <option value="REUTILIZACION">REUTILIZACIÓN (-)</option>
                                 <option value="DESCARTE">DESCARTE / MERMA (-)</option>
@@ -1148,30 +1156,30 @@
                     <div class="grid grid-cols-2 gap-4">
                         <div>
                             <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Formato</label>
-                            <select id="formato" class="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-amber-500 outline-none text-sm"></select>
+                            <select id="formato" class="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-sky-500 outline-none text-sm"></select>
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Cantidad</label>
-                            <input type="number" id="cantidad" step="0.001" min="0" required class="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-amber-500 outline-none text-sm" placeholder="0.000">
+                            <input type="number" id="cantidad" step="0.001" min="0" required class="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-sky-500 outline-none text-sm" placeholder="0.000">
                         </div>
                     </div>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                             <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Operario</label>
-                            <div class="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-lg px-3 py-3">
+                            <div class="flex items-center justify-between bg-sky-50 border border-sky-200 rounded-lg px-3 py-3">
                                 <div class="flex items-center gap-2">
-                                    <i class="fas fa-user-check text-amber-600 text-sm"></i>
-                                    <span class="text-sm font-bold text-amber-800" id="op-sesion-nombre">—</span>
+                                    <i class="fas fa-user-check text-sky-600 text-sm"></i>
+                                    <span class="text-sm font-bold text-sky-800" id="op-sesion-nombre">—</span>
                                 </div>
-                                <button type="button" onclick="cerrarSesionOperario()" class="text-xs text-amber-500 hover:text-amber-700 font-bold underline">Cambiar</button>
+                                <button type="button" onclick="cerrarSesionOperario()" class="text-xs text-sky-500 hover:text-sky-700 font-bold underline">Cambiar</button>
                             </div>
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Fecha y Hora</label>
-                            <input type="datetime-local" id="fecha" required class="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-amber-500 outline-none text-sm">
+                            <input type="datetime-local" id="fecha" required class="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-sky-500 outline-none text-sm">
                         </div>
                     </div>
-                    <button type="submit" class="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-4 rounded-xl shadow-lg transition transform active:scale-95 uppercase tracking-wider mt-4">Confirmar Carga</button>
+                    <button type="submit" class="w-full bg-sky-600 hover:bg-sky-700 text-white font-bold py-4 rounded-xl shadow-lg transition transform active:scale-95 uppercase tracking-wider mt-4">Confirmar Carga</button>
                 </form>
             </div>
         </div>
@@ -1180,7 +1188,7 @@
         <div id="vista-historial" class="vista hidden container mx-auto max-w-3xl">
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-lg font-bold text-gray-700 uppercase tracking-tight">Registro de Movimientos</h2>
-                <button id="btn-toggle-historial" onclick="toggleModoHistorial()" class="bg-white px-3 py-1 rounded-full text-xs font-bold border text-amber-700 shadow-sm"><i class="fas fa-layer-group mr-1"></i> Agrupar</button>
+                <button id="btn-toggle-historial" onclick="toggleModoHistorial()" class="bg-white px-3 py-1 rounded-full text-xs font-bold border text-sky-700 shadow-sm"><i class="fas fa-layer-group mr-1"></i> Agrupar</button>
             </div>
             <div class="flex gap-3 mb-3 flex-wrap">
                 <span class="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-1 rounded">● PROD = Producción</span>
@@ -1194,22 +1202,22 @@
         <!-- VISTA CONFIG -->
         <div id="vista-config" class="vista hidden container mx-auto max-w-4xl space-y-6">
             <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
-                <h2 class="text-xl font-bold mb-4 flex items-center gap-2"><i class="fas fa-tools text-amber-600"></i> Panel de Administración</h2>
+                <h2 class="text-xl font-bold mb-4 flex items-center gap-2"><i class="fas fa-tools text-sky-600"></i> Panel de Administración</h2>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                         <h3 class="font-bold text-xs uppercase text-gray-400 mb-2">Productos (CSV: Nombre|Unidad|Alt|Factor|Stock)</h3>
                         <div class="space-y-4">
                             <!-- Categorías fijas -->
                             <div>
-                                <label class="text-[10px] font-bold text-amber-700">PANADERÍA</label>
+                                <label class="text-[10px] font-bold text-sky-700">PANADERÍA</label>
                                 <textarea id="config-panaderia" rows="4" class="w-full p-2 bg-gray-50 border rounded font-mono text-xs"></textarea>
                             </div>
                             <div>
-                                <label class="text-[10px] font-bold text-amber-700">PASTELERÍA</label>
+                                <label class="text-[10px] font-bold text-sky-700">PASTELERÍA</label>
                                 <textarea id="config-pasteleria" rows="4" class="w-full p-2 bg-gray-50 border rounded font-mono text-xs"></textarea>
                             </div>
                             <div>
-                                <label class="text-[10px] font-bold text-amber-700">COCINA</label>
+                                <label class="text-[10px] font-bold text-sky-700">COCINA</label>
                                 <textarea id="config-cocina" rows="4" class="w-full p-2 bg-gray-50 border rounded font-mono text-xs"></textarea>
                             </div>
                             <!-- Categorías extra: se renderizan dinámicamente aquí -->
@@ -1226,7 +1234,7 @@
                             <h3 class="font-bold text-xs uppercase text-gray-400 mb-2">Operarios y PINs <span class="text-gray-300 font-normal normal-case">(Nombre + PIN 4 dígitos)</span></h3>
                             <div id="tabla-operarios-pines" class="space-y-2 mb-2"></div>
                             <button type="button" onclick="agregarOperarioPines()"
-                                class="w-full border-2 border-dashed border-amber-300 text-amber-600 hover:bg-amber-50 font-bold py-2 rounded-lg text-xs transition flex items-center justify-center gap-2">
+                                class="w-full border-2 border-dashed border-sky-300 text-sky-600 hover:bg-sky-50 font-bold py-2 rounded-lg text-xs transition flex items-center justify-center gap-2">
                                 <i class="fas fa-plus-circle"></i> Agregar operario
                             </button>
                         </div>
@@ -1253,13 +1261,12 @@
     <div id="m-login-op" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-xs p-6">
             <div class="text-center mb-5">
-                <div class="w-14 h-14 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <i class="fas fa-user-lock text-amber-600 text-2xl"></i>
-                </div>
-                <h2 class="font-bold text-gray-800 text-lg">Identificate</h2>
-                <p id="op-login-sub" class="text-xs text-gray-400 mt-1">Seleccioná tu nombre e ingresá tu PIN</p>
+                <img src="icon-512.png" alt="Control de Producción" class="w-20 h-20 rounded-2xl mx-auto mb-2 shadow-sm">
+                <h2 class="font-bold text-gray-800 text-base leading-tight">Control de Producción</h2>
+                <p class="text-[11px] text-sky-600 font-bold uppercase tracking-wide">Gestión de Stock</p>
+                <p id="op-login-sub" class="text-xs text-gray-400 mt-2">Seleccioná tu nombre e ingresá tu PIN</p>
             </div>
-            <select id="op-login-nombre" class="w-full p-3 bg-gray-50 border rounded-lg text-sm font-bold mb-5 outline-none focus:ring-2 focus:ring-amber-500"></select>
+            <select id="op-login-nombre" class="w-full p-3 bg-gray-50 border rounded-lg text-sm font-bold mb-5 outline-none focus:ring-2 focus:ring-sky-500"></select>
             <div class="flex justify-center gap-4 mb-5" id="op-pin-dots">
                 <div class="w-5 h-5 rounded-full border-2 border-gray-300"></div>
                 <div class="w-5 h-5 rounded-full border-2 border-gray-300"></div>
@@ -1278,13 +1285,13 @@
     </style>
 
     <nav class="fixed bottom-0 w-full bg-white border-t border-gray-200 flex justify-around py-2 sm:hidden z-30 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
-        <button onclick="cambiarVista('vista-panel')" class="flex flex-col items-center gap-1 text-gray-400 focus:text-amber-700">
+        <button onclick="cambiarVista('vista-panel')" class="flex flex-col items-center gap-1 text-gray-400 focus:text-sky-700">
             <i class="fas fa-chart-bar text-xl"></i><span class="text-[10px] font-bold">Resumen</span>
         </button>
-        <button onclick="cambiarVista('vista-carga')" class="flex flex-col items-center gap-1 text-gray-400 focus:text-amber-700">
+        <button onclick="cambiarVista('vista-carga')" class="flex flex-col items-center gap-1 text-gray-400 focus:text-sky-700">
             <i class="fas fa-plus-circle text-xl"></i><span class="text-[10px] font-bold">Cargar</span>
         </button>
-        <button onclick="cambiarVista('vista-historial')" class="flex flex-col items-center gap-1 text-gray-400 focus:text-amber-700">
+        <button onclick="cambiarVista('vista-historial')" class="flex flex-col items-center gap-1 text-gray-400 focus:text-sky-700">
             <i class="fas fa-history text-xl"></i><span class="text-[10px] font-bold">Historial</span>
         </button>
     </nav>
