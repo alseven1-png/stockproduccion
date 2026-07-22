@@ -54,6 +54,33 @@
         let modoHistorial = 'cronologico';
         let operarioActual = null;
         let operariosPines = [];
+
+        // ── Monitoreo de errores: registra fallas en 'errores' (best-effort, nunca tira) ──
+        const _errSeen = new Map(); let _errSesion = 0;
+        function logError(contexto, err){
+            try{
+                if(!db || _errSesion >= 80) return;
+                const msg = (err && (err.message || err.reason)) ? (err.message || err.reason) : String(err == null ? 'error' : err);
+                const clave = contexto + '|' + String(msg).slice(0,80);
+                const ahora = Date.now();
+                if(_errSeen.get(clave) && (ahora - _errSeen.get(clave)) < 60000) return;
+                _errSeen.set(clave, ahora); _errSesion++;
+                db.collection('errores').add({
+                    fecha: new Date(Date.now()-3*60*60*1000).toISOString().slice(0,-1),
+                    timestamp: Date.now(),
+                    contexto: String(contexto||'').slice(0,60),
+                    mensaje: String(msg).slice(0,300),
+                    stack: (err && err.stack) ? String(err.stack).slice(0,900) : '',
+                    pantalla: 'produccion',
+                    operario: (operarioActual && operarioActual.nombre) || (currentUser && currentUser.nombre) || '',
+                    app: 'CONTROL',
+                    ua: String(navigator.userAgent||'').slice(0,180),
+                    url: String(location.href||'').slice(0,200)
+                }).catch(()=>{});
+            }catch(_){}
+        }
+        window.addEventListener('error', e => logError('window.onerror', e.error || e.message));
+        window.addEventListener('unhandledrejection', e => logError('promise', e.reason));
         let _pinOpVal = '';
 
         // ── Blindaje Fase 2: login real por PIN (Cloud Function `login`) ──
@@ -636,7 +663,7 @@
                 e.target.reset();
                 establecerInputs();
                 actualizarFormato();
-            }).catch((err) => { alert("Error: " + err.message); }).finally(() => {
+            }).catch((err) => { alert("Error: " + err.message); logError('guardar-movimiento', err); }).finally(() => {
                 btn.disabled = false; btn.innerText = "CONFIRMAR CARGA";
             });
         }
@@ -999,7 +1026,7 @@
                 operariosGlobal = operariosPines.map(o=>o.nombre);
                 await cargarConfiguracionGeneral();
                 alert("✅ Guardado y Sincronizado correctamente.");
-            } catch(e) { alert("Error: " + e.message); } 
+            } catch(e) { alert("Error: " + e.message); logError('guardar-productos', e); }
             finally { btn.innerText = textoOriginal; btn.disabled = false; }
         }
 
